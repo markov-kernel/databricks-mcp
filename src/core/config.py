@@ -24,7 +24,7 @@ from pydantic import field_validator
 from pydantic_settings import BaseSettings
 
 # Version
-VERSION = "0.1.0"
+VERSION = "0.2.0"
 
 
 class Settings(BaseSettings):
@@ -33,6 +33,7 @@ class Settings(BaseSettings):
     # Databricks API configuration
     DATABRICKS_HOST: str = os.environ.get("DATABRICKS_HOST", "https://example.databricks.net")
     DATABRICKS_TOKEN: str = os.environ.get("DATABRICKS_TOKEN", "dapi_token_placeholder")
+    DATABRICKS_WAREHOUSE_ID: Optional[str] = os.environ.get("DATABRICKS_WAREHOUSE_ID")
 
     # Server configuration
     SERVER_HOST: str = os.environ.get("SERVER_HOST", "0.0.0.0") 
@@ -50,6 +51,15 @@ class Settings(BaseSettings):
         """Validate Databricks host URL."""
         if not v.startswith(("https://", "http://")):
             raise ValueError("DATABRICKS_HOST must start with http:// or https://")
+        return v
+
+    @field_validator("DATABRICKS_WAREHOUSE_ID")
+    def validate_warehouse_id(cls, v: Optional[str]) -> Optional[str]:
+        """Validate warehouse ID format if provided."""
+        if v and len(v) < 10:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.warning(f"Warehouse ID '{v}' seems unusually short")
         return v
 
     class Config:

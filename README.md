@@ -17,17 +17,28 @@ Credit for the initial version goes to [@JustTryAI](https://github.com/JustTryAI
 
 The Databricks MCP Server exposes the following tools:
 
+### Cluster Management
 - **list_clusters**: List all Databricks clusters
 - **create_cluster**: Create a new Databricks cluster
 - **terminate_cluster**: Terminate a Databricks cluster
 - **get_cluster**: Get information about a specific Databricks cluster
 - **start_cluster**: Start a terminated Databricks cluster
+
+### Job Management
 - **list_jobs**: List all Databricks jobs
 - **run_job**: Run a Databricks job
+
+### Workspace Files
 - **list_notebooks**: List notebooks in a workspace directory
 - **export_notebook**: Export a notebook from the workspace
+- **get_workspace_file_content**: Retrieve content of any workspace file (JSON, notebooks, scripts, etc.)
+- **get_workspace_file_info**: Get metadata about workspace files
+
+### File System
 - **list_files**: List files and directories in a DBFS path
-- **execute_sql**: Execute a SQL statement
+
+### SQL Execution
+- **execute_sql**: Execute a SQL statement (warehouse_id optional if DATABRICKS_WAREHOUSE_ID env var is set)
 
 ## Installation
 
@@ -76,6 +87,7 @@ The Databricks MCP Server exposes the following tools:
 
 4. Set up environment variables:
    ```bash
+   # Required variables
    # Windows
    set DATABRICKS_HOST=https://your-databricks-instance.azuredatabricks.net
    set DATABRICKS_TOKEN=your-personal-access-token
@@ -83,6 +95,9 @@ The Databricks MCP Server exposes the following tools:
    # Linux/Mac
    export DATABRICKS_HOST=https://your-databricks-instance.azuredatabricks.net
    export DATABRICKS_TOKEN=your-personal-access-token
+   
+   # Optional: Set default SQL warehouse (makes warehouse_id optional in execute_sql)
+   export DATABRICKS_WAREHOUSE_ID=sql_warehouse_12345
    ```
 
    You can also create an `.env` file based on the `.env.example` template.
@@ -122,6 +137,7 @@ To use this server with AI clients like Cursor or Claude CLI, you need to regist
           "env": {
             "DATABRICKS_HOST": "https://your-databricks-instance.azuredatabricks.net", 
             "DATABRICKS_TOKEN": "dapiXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
+            "DATABRICKS_WAREHOUSE_ID": "sql_warehouse_12345",
             "RUNNING_VIA_CURSOR_MCP": "true" 
           }
         }
@@ -145,6 +161,7 @@ To use this server with AI clients like Cursor or Claude CLI, you need to regist
       -s user \
       -e DATABRICKS_HOST="https://your-databricks-instance.azuredatabricks.net" \
       -e DATABRICKS_TOKEN="dapiXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX" \
+      -e DATABRICKS_WAREHOUSE_ID="sql_warehouse_12345" \
       -- /absolute/path/to/your/project/databricks-mcp-server/start_mcp_server.sh
     ```
 
@@ -163,6 +180,41 @@ uv run scripts/show_clusters.py
 
 # View all notebooks
 uv run scripts/show_notebooks.py
+```
+
+## Usage Examples
+
+### SQL Execution with Default Warehouse
+```python
+# With DATABRICKS_WAREHOUSE_ID set, warehouse_id is optional
+await session.call_tool("execute_sql", {
+    "statement": "SELECT * FROM my_table LIMIT 10"
+})
+
+# You can still override the default warehouse
+await session.call_tool("execute_sql", {
+    "statement": "SELECT * FROM my_table LIMIT 10",
+    "warehouse_id": "sql_warehouse_specific"
+})
+```
+
+### Workspace File Content Retrieval
+```python
+# Get JSON file content from workspace
+await session.call_tool("get_workspace_file_content", {
+    "workspace_path": "/Users/user@domain.com/config/settings.json"
+})
+
+# Get notebook content in Jupyter format
+await session.call_tool("get_workspace_file_content", {
+    "workspace_path": "/Users/user@domain.com/my_notebook",
+    "format": "JUPYTER"
+})
+
+# Get file metadata without downloading content
+await session.call_tool("get_workspace_file_info", {
+    "workspace_path": "/Users/user@domain.com/large_file.py"
+})
 ```
 
 ## Project Structure

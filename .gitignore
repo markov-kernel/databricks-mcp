@@ -31,6 +31,7 @@ Thumbs.db
 # Logs
 *.log
 logs/
+IMPLEMENTATION_COMPLETE.md
 
 # Temporary files
 tmp/
@@ -81,6 +82,9 @@ coverage.xml
 *.cover
 .hypothesis/
 .pytest_cache/
+test_example_file.py
+test_new_features.py
+debug_api.py
 
 # Environments
 env.bak/
@@ -100,4 +104,4 @@ ehthumbs.db
 Thumbs.db
 
 # Log files
-*.log 
+*.log
