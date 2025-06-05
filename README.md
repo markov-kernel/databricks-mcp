@@ -56,7 +56,22 @@ The Databricks MCP Server exposes the following tools:
    cd databricks-mcp
    ```
 
-3. Set up the project with `uv`:
+3. Run the setup script:
+   ```bash
+   # Linux/Mac
+   ./scripts/setup.sh
+   
+   # Windows (PowerShell)
+   .\scripts\setup.ps1
+   ```
+
+   The setup script will:
+   - Install `uv` if not already installed
+   - Create a virtual environment
+   - Install all project dependencies
+   - Verify the installation works
+
+   **Alternative manual setup:**
    ```bash
    # Create and activate virtual environment
    uv venv
