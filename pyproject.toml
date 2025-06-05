@@ -7,15 +7,23 @@ name = "databricks-mcp-server"
 version = "0.1.0"
 description = "A Model Completion Protocol (MCP) server for Databricks"
 authors = [
-    {name = "MCP Server Team", email = "example@example.com"}
+    {name = "Olivier Debeuf De Rijcker", email = "olivier@markov.bot"}
 ]
 requires-python = ">=3.10"
 readme = "README.md"
 license = {text = "MIT"}
+keywords = ["databricks", "mcp", "model-context-protocol", "llm", "ai", "cursor"]
+homepage = "https://github.com/markov-kernel/databricks-mcp"
+repository = "https://github.com/markov-kernel/databricks-mcp"
 classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Topic :: Internet :: WWW/HTTP :: HTTP Servers",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
     "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
 ]
@@ -37,6 +45,7 @@ dev = [
 ]
 
 [project.scripts]
+databricks-mcp-server = "src.server.databricks_mcp_server:main"
 databricks-mcp = "src.cli.commands:main"
 
 [tool.hatch.build.targets.wheel]
@@ -49,3 +58,9 @@ testpaths = ["tests"]
 python_files = ["test_*.py"]
 python_functions = ["test_*"]
 addopts = "-v --tb=short" 
+
+[dependency-groups]
+dev = [
+    "build>=1.2.2.post1",
+    "twine>=6.1.0",
+]

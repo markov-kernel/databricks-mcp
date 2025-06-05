@@ -2,6 +2,10 @@
 
 A Model Completion Protocol (MCP) server for Databricks that provides access to Databricks functionality via the MCP protocol. This allows LLM-powered tools to interact with Databricks clusters, jobs, notebooks, and more.
 
+[![Add to Cursor](https://cursor.com/deeplink/mcp-install-dark.png)](cursor://anysphere.cursor-deeplink/mcp/install?name=Databricks%20MCP&config=eyJkYXRhYnJpY2tzLW1jcCI6eyJjb21tYW5kIjoidXZ4IiwiYXJncyI6WyJkYXRhYnJpY2tzLW1jcC1zZXJ2ZXIiXSwiZW52Ijp7IkRBVEFCUklDS1NfSE9TVCI6IiR7REFUQUJSSUNLU19IT1NUfSIsIkRBVEFCUklDS1NfVE9LRU4iOiIke0RBVEFCUklDS1NfVE9LRU59IiwiREFUQUJSSUNLU19XQVJFSE9VU0VfSUQiOiIke0RBVEFCUklDS1NfV0FSRUhPVVNFX0lEfSJ9fX0K)
+
+[Install Databricks MCP in Cursor](cursor://anysphere.cursor-deeplink/mcp/install?name=Databricks%20MCP&config=eyJkYXRhYnJpY2tzLW1jcCI6eyJjb21tYW5kIjoidXZ4IiwiYXJncyI6WyJkYXRhYnJpY2tzLW1jcC1zZXJ2ZXIiXSwiZW52Ijp7IkRBVEFCUklDS1NfSE9TVCI6IiR7REFUQUJSSUNLU19IT1NUfSIsIkRBVEFCUklDS1NfVE9LRU4iOiIke0RBVEFCUklDS1NfVE9LRU59IiwiREFUQUJSSUNLU19XQVJFSE9VU0VfSUQiOiIke0RBVEFCUklDS1NfV0FSRUhPVVNFX0lEfSJ9fX0K)
+
 This project is maintained by Olivier Debeuf De Rijcker <olivier@markov.bot>.
 
 Credit for the initial version goes to [@JustTryAI](https://github.com/JustTryAI/databricks-mcp-server).
@@ -42,7 +46,21 @@ The Databricks MCP Server exposes the following tools:
 
 ## Installation
 
-### Prerequisites
+### Quick Install (Recommended)
+
+Click the button above or use this link to install with one click:
+
+**[→ Install Databricks MCP in Cursor ←](cursor://anysphere.cursor-deeplink/mcp/install?name=Databricks%20MCP&config=eyJkYXRhYnJpY2tzLW1jcCI6eyJjb21tYW5kIjoidXZ4IiwiYXJncyI6WyJkYXRhYnJpY2tzLW1jcC1zZXJ2ZXIiXSwiZW52Ijp7IkRBVEFCUklDS1NfSE9TVCI6IiR7REFUQUJSSUNLU19IT1NUfSIsIkRBVEFCUklDS1NfVE9LRU4iOiIke0RBVEFCUklDS1NfVE9LRU59IiwiREFUQUJSSUNLU19XQVJFSE9VU0VfSUQiOiIke0RBVEFCUklDS1NfV0FSRUhPVVNFX0lEfSJ9fX0K)**
+
+This will automatically install the MCP server using `uvx` and configure it in Cursor. You'll need to set these environment variables:
+
+- `DATABRICKS_HOST` - Your Databricks workspace URL
+- `DATABRICKS_TOKEN` - Your Databricks personal access token  
+- `DATABRICKS_WAREHOUSE_ID` - (Optional) Your default SQL warehouse ID
+
+### Manual Installation
+
+#### Prerequisites
 
 - Python 3.10 or higher
 - `uv` package manager (recommended for MCP servers)

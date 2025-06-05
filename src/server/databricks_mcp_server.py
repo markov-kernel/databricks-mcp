@@ -273,8 +273,8 @@ class DatabricksMCPServer(FastMCP):
                 return [{"text": json.dumps({"error": str(e)})}]
 
 
-async def main():
-    """Main entry point for the MCP server."""
+async def async_main():
+    """Async main entry point for the MCP server."""
     try:
         logger.info("Starting Databricks MCP server")
         server = DatabricksMCPServer()
@@ -288,9 +288,14 @@ async def main():
         raise
 
 
-if __name__ == "__main__":
+def main():
+    """Synchronous main entry point for the MCP server (for setuptools entry point)."""
     # Turn off buffering in stdout
     if hasattr(sys.stdout, 'reconfigure'):
         sys.stdout.reconfigure(line_buffering=True)
     
-    asyncio.run(main()) 
+    asyncio.run(async_main())
+
+
+if __name__ == "__main__":
+    main() 
