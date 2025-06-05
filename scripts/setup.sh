@@ -35,10 +35,6 @@ uv pip install -e .
 echo "📥 Installing development dependencies..."
 uv pip install -e ".[dev]"
 
-# Install additional modules required for tests
-echo "📥 Installing extra modules for testing..."
-uv pip install fastapi anyio
-
 # Verify installation
 echo "🔍 Verifying installation..."
 python -c "import src.server.databricks_mcp_server; print('✅ MCP server module imported successfully')"

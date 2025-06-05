@@ -42,6 +42,8 @@ dev = [
     "pylint",
     "pytest",
     "pytest-asyncio",
+    "fastapi",
+    "anyio",
 ]
 
 [project.scripts]

@@ -6,6 +6,8 @@ black>=24.0.0
 pylint>=3.0.0
 pytest>=8.0.0
 pytest-asyncio>=0.24.0
+fastapi>=0.115.0
+anyio>=4.0.0
 
 # CLI dependencies
 click>=8.0.0 
