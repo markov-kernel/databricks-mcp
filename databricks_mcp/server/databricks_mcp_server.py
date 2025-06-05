@@ -35,7 +35,7 @@ class DatabricksMCPServer(FastMCP):
     def __init__(self):
         """Initialize the Databricks MCP server."""
         super().__init__(name="databricks-mcp", 
-                         version="0.2.1", 
+                         version="0.3.0", 
                          instructions="Use this server to manage Databricks resources")
         logger.info("Initializing Databricks MCP server")
         logger.info(f"Databricks host: {settings.DATABRICKS_HOST}")
