@@ -58,6 +58,7 @@ The Databricks MCP Server exposes the following tools:
 ### Job Management
 - **list_jobs**: List all Databricks jobs
 - **run_job**: Run a Databricks job
+- **run_notebook**: Submit and wait for a one-time notebook run
 
 ### Workspace Files
 - **list_notebooks**: List notebooks in a workspace directory
@@ -67,6 +68,10 @@ The Databricks MCP Server exposes the following tools:
 
 ### File System
 - **list_files**: List files and directories in a DBFS path
+- **pull_repo**: Pull the latest commit for a Databricks repo
+
+### Composite
+- **sync_repo_and_run_notebook**: Pull a repo and execute a notebook in one call
 
 ### SQL Execution
 - **execute_sql**: Execute a SQL statement (warehouse_id optional if DATABRICKS_WAREHOUSE_ID env var is set)
@@ -284,6 +289,14 @@ await session.call_tool("get_workspace_file_content", {
 # Get file metadata without downloading content
 await session.call_tool("get_workspace_file_info", {
     "workspace_path": "/Users/user@domain.com/large_file.py"
+})
+```
+
+### Repo Sync and Notebook Execution
+```python
+await session.call_tool("sync_repo_and_run_notebook", {
+    "repo_id": 123,
+    "notebook_path": "/Repos/user/project/run_me"
 })
 ```
 

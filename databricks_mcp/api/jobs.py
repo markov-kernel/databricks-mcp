@@ -155,3 +155,72 @@ async def cancel_run(run_id: int) -> Dict[str, Any]:
     """
     logger.info(f"Cancelling run: {run_id}")
     return await make_api_request("POST", "/api/2.0/jobs/runs/cancel", data={"run_id": run_id})
+
+
+async def submit_run(run_config: Dict[str, Any]) -> Dict[str, Any]:
+    """Submit a one-time run.
+
+    Args:
+        run_config: Configuration for the run
+
+    Returns:
+        Response containing the run ID
+    """
+    logger.info("Submitting one-time run")
+    return await make_api_request("POST", "/api/2.0/jobs/runs/submit", data=run_config)
+
+
+async def get_run_output(run_id: int) -> Dict[str, Any]:
+    """Get the output of a run."""
+    logger.info(f"Fetching output for run {run_id}")
+    return await make_api_request("GET", "/api/2.0/jobs/runs/get-output", params={"run_id": run_id})
+
+
+async def await_until_state(
+    run_id: int,
+    desired_state: str = "TERMINATED",
+    timeout_seconds: int = 600,
+    poll_interval_seconds: int = 5,
+) -> Dict[str, Any]:
+    """Wait for a run to reach a desired state."""
+    import asyncio
+    import time
+
+    start = time.time()
+    while True:
+        run_info = await get_run(run_id)
+        state = run_info.get("state", {}).get("life_cycle_state")
+        if state == desired_state:
+            return run_info
+        if time.time() - start > timeout_seconds:
+            raise TimeoutError(f"Run {run_id} did not reach state {desired_state} within {timeout_seconds}s")
+        await asyncio.sleep(poll_interval_seconds)
+
+
+async def run_notebook(
+    notebook_path: str,
+    existing_cluster_id: Optional[str] = None,
+    base_parameters: Optional[Dict[str, Any]] = None,
+    timeout_seconds: int = 600,
+    poll_interval_seconds: int = 5,
+) -> Dict[str, Any]:
+    """Submit a one-time run for a notebook and wait for completion."""
+    task = {
+        "task_key": "run_notebook",
+        "notebook_task": {"notebook_path": notebook_path},
+    }
+    if base_parameters:
+        task["notebook_task"]["base_parameters"] = base_parameters
+    if existing_cluster_id:
+        task["existing_cluster_id"] = existing_cluster_id
+
+    run_conf = {"tasks": [task]}
+    submit_response = await submit_run(run_conf)
+    run_id = submit_response.get("run_id")
+    if not run_id:
+        raise ValueError("submit_run did not return a run_id")
+
+    await await_until_state(run_id, timeout_seconds=timeout_seconds, poll_interval_seconds=poll_interval_seconds)
+    output = await get_run_output(run_id)
+    output["run_id"] = run_id
+    return output

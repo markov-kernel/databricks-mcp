@@ -35,10 +35,19 @@ def parse_args(args: Optional[List[str]] = None) -> argparse.Namespace:
     
     # List tools command
     list_parser = subparsers.add_parser("list-tools", help="List available tools")
-    
+
     # Version command
     subparsers.add_parser("version", help="Show server version")
-    
+
+    # Sync repo and run notebook command
+    sync_parser = subparsers.add_parser(
+        "sync-run",
+        help="Pull a repo and run a notebook",
+    )
+    sync_parser.add_argument("--repo-id", type=int, required=True, help="Repo ID")
+    sync_parser.add_argument("--notebook-path", required=True, help="Notebook path")
+    sync_parser.add_argument("--cluster-id", help="Existing cluster ID")
+
     return parser.parse_args(args)
 
 
@@ -58,6 +67,20 @@ def show_version() -> None:
     print(f"\nDatabricks MCP Server v{server.version}")
 
 
+async def sync_run(repo_id: int, notebook_path: str, cluster_id: Optional[str]) -> None:
+    """Convenience wrapper for the sync_repo_and_run_notebook tool."""
+    server = DatabricksMCPServer()
+    params = {
+        "repo_id": repo_id,
+        "notebook_path": notebook_path,
+    }
+    if cluster_id:
+        params["existing_cluster_id"] = cluster_id
+    result = await server.call_tool("sync_repo_and_run_notebook", params)
+    if result and hasattr(result[0], "text"):
+        print(result[0].text)
+
+
 def main(args: Optional[List[str]] = None) -> int:
     """Main entry point for the CLI."""
     parsed_args = parse_args(args)
@@ -74,6 +97,8 @@ def main(args: Optional[List[str]] = None) -> int:
         asyncio.run(list_tools())
     elif parsed_args.command == "version":
         show_version()
+    elif parsed_args.command == "sync-run":
+        asyncio.run(sync_run(parsed_args.repo_id, parsed_args.notebook_path, parsed_args.cluster_id))
     else:
         # If no command is provided, show help
         parse_args(["--help"])
