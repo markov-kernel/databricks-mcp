@@ -35,7 +35,7 @@ class DatabricksMCPServer(FastMCP):
     def __init__(self):
         """Initialize the Databricks MCP server."""
         super().__init__(name="databricks-mcp", 
-                         version="1.0.0", 
+                         version="0.2.0", 
                          instructions="Use this server to manage Databricks resources")
         logger.info("Initializing Databricks MCP server")
         logger.info(f"Databricks host: {settings.DATABRICKS_HOST}")
@@ -192,15 +192,21 @@ class DatabricksMCPServer(FastMCP):
         # SQL tools
         @self.tool(
             name="execute_sql",
-            description="Execute a SQL statement with parameters: statement (required), warehouse_id (required), catalog (optional), schema (optional)",
+            description="Execute a SQL statement with parameters: statement (required), warehouse_id (optional - uses DATABRICKS_WAREHOUSE_ID env var if not provided), catalog (optional), schema (optional)",
         )
         async def execute_sql(params: Dict[str, Any]) -> List[TextContent]:
             logger.info(f"Executing SQL with params: {params}")
             try:
-                statement = params.get("statement")
-                warehouse_id = params.get("warehouse_id")
-                catalog = params.get("catalog")
-                schema = params.get("schema")
+                # Handle both direct params and nested params structure
+                if 'params' in params:
+                    actual_params = params['params']
+                else:
+                    actual_params = params
+                    
+                statement = actual_params.get("statement")
+                warehouse_id = actual_params.get("warehouse_id")
+                catalog = actual_params.get("catalog")
+                schema = actual_params.get("schema")
                 
                 result = await sql.execute_statement(
                     statement=statement,
@@ -211,6 +217,59 @@ class DatabricksMCPServer(FastMCP):
                 return [{"text": json.dumps(result)}]
             except Exception as e:
                 logger.error(f"Error executing SQL: {str(e)}")
+                return [{"text": json.dumps({"error": str(e)})}]
+        
+        # Workspace file tools
+        @self.tool(
+            name="get_workspace_file_content",
+            description="Retrieve the content of a file from Databricks workspace with parameters: workspace_path (required), format (optional: SOURCE, HTML, JUPYTER, DBC - default SOURCE)",
+        )
+        async def get_workspace_file_content(params: Dict[str, Any]) -> List[TextContent]:
+            logger.info(f"Getting workspace file content with params: {params}")
+            try:
+                # Handle both direct params and nested params structure
+                if 'params' in params:
+                    actual_params = params['params']
+                else:
+                    actual_params = params
+                    
+                workspace_path = actual_params.get("workspace_path")
+                format_type = actual_params.get("format", "SOURCE")
+                
+                if not workspace_path:
+                    raise ValueError("workspace_path is required")
+                
+                # Use the workspace export API
+                result = await notebooks.export_workspace_file(workspace_path, format_type)
+                return [{"text": json.dumps(result)}]
+                
+            except Exception as e:
+                logger.error(f"Error getting workspace file content: {str(e)}")
+                return [{"text": json.dumps({"error": str(e)})}]
+        
+        @self.tool(
+            name="get_workspace_file_info",
+            description="Get metadata about a workspace file with parameters: workspace_path (required)",
+        )
+        async def get_workspace_file_info(params: Dict[str, Any]) -> List[TextContent]:
+            logger.info(f"Getting workspace file info with params: {params}")
+            try:
+                # Handle both direct params and nested params structure
+                if 'params' in params:
+                    actual_params = params['params']
+                else:
+                    actual_params = params
+                    
+                workspace_path = actual_params.get("workspace_path")
+                
+                if not workspace_path:
+                    raise ValueError("workspace_path is required")
+                
+                result = await notebooks.get_workspace_file_info(workspace_path)
+                return [{"text": json.dumps(result)}]
+                
+            except Exception as e:
+                logger.error(f"Error getting workspace file info: {str(e)}")
                 return [{"text": json.dumps({"error": str(e)})}]
 
 

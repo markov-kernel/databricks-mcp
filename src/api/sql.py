@@ -6,6 +6,7 @@ import logging
 from typing import Any, Dict, List, Optional
 
 from src.core.utils import DatabricksAPIError, make_api_request
+from src.core.config import settings
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -13,7 +14,7 @@ logger = logging.getLogger(__name__)
 
 async def execute_statement(
     statement: str,
-    warehouse_id: str,
+    warehouse_id: Optional[str] = None,
     catalog: Optional[str] = None,
     schema: Optional[str] = None,
     parameters: Optional[Dict[str, Any]] = None,
@@ -25,7 +26,7 @@ async def execute_statement(
     
     Args:
         statement: The SQL statement to execute
-        warehouse_id: ID of the SQL warehouse to use
+        warehouse_id: ID of the SQL warehouse to use (optional if DATABRICKS_WAREHOUSE_ID is set) (optional if DATABRICKS_WAREHOUSE_ID is set)
         catalog: Optional catalog to use
         schema: Optional schema to use
         parameters: Optional statement parameters
@@ -37,12 +38,22 @@ async def execute_statement(
         
     Raises:
         DatabricksAPIError: If the API request fails
+        ValueError: If no warehouse_id is provided and DATABRICKS_WAREHOUSE_ID is not set
     """
     logger.info(f"Executing SQL statement: {statement[:100]}...")
     
+    # Use provided warehouse_id or fall back to environment variable
+    effective_warehouse_id = warehouse_id or settings.DATABRICKS_WAREHOUSE_ID
+    
+    if not effective_warehouse_id:
+        raise ValueError(
+            "warehouse_id must be provided either as parameter or "
+            "set DATABRICKS_WAREHOUSE_ID environment variable"
+        )
+    
     request_data = {
         "statement": statement,
-        "warehouse_id": warehouse_id,
+        "warehouse_id": effective_warehouse_id,
         "wait_timeout": "10s",
         "format": "JSON_ARRAY",
         "disposition": "INLINE",
@@ -64,7 +75,7 @@ async def execute_statement(
 
 async def execute_and_wait(
     statement: str,
-    warehouse_id: str,
+    warehouse_id: Optional[str] = None,
     catalog: Optional[str] = None,
     schema: Optional[str] = None,
     parameters: Optional[Dict[str, Any]] = None,
@@ -76,7 +87,7 @@ async def execute_and_wait(
     
     Args:
         statement: The SQL statement to execute
-        warehouse_id: ID of the SQL warehouse to use
+        warehouse_id: ID of the SQL warehouse to use (optional if DATABRICKS_WAREHOUSE_ID is set)
         catalog: Optional catalog to use
         schema: Optional schema to use
         parameters: Optional statement parameters

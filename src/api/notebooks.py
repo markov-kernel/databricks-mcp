@@ -146,6 +146,100 @@ async def create_directory(path: str) -> Dict[str, Any]:
     return make_api_request("POST", "/api/2.0/workspace/mkdirs", data={"path": path})
 
 
+async def export_workspace_file(
+    path: str,
+    format: str = "SOURCE",
+) -> Dict[str, Any]:
+    """
+    Export any file from the workspace (not just notebooks).
+    
+    Args:
+        path: The workspace path of the file to export (e.g., /Users/user@domain.com/file.json)
+        format: The format to export (SOURCE, HTML, JUPYTER, DBC)
+        
+    Returns:
+        Response containing the file content
+        
+    Raises:
+        DatabricksAPIError: If the API request fails
+    """
+    logger.info(f"Exporting workspace file from path: {path}")
+    
+    params = {
+        "path": path,
+        "format": format,
+    }
+    
+    response = make_api_request("GET", "/api/2.0/workspace/export", params=params)
+    
+    # Always try to decode base64 content for SOURCE format
+    if "content" in response and format == "SOURCE":
+        try:
+            decoded_content = base64.b64decode(response["content"]).decode("utf-8")
+            response["decoded_content"] = decoded_content
+            response["content_type"] = "text"
+            
+            # Try to detect if it's JSON
+            try:
+                import json
+                json.loads(decoded_content)  # Validate JSON
+                response["content_type"] = "json"
+            except json.JSONDecodeError:
+                pass  # Keep as text
+                
+        except UnicodeDecodeError as e:
+            logger.warning(f"Failed to decode file content as UTF-8: {str(e)}")
+            # Try different encodings
+            try:
+                decoded_bytes = base64.b64decode(response["content"])
+                # Return as text with error replacement
+                response["decoded_content"] = decoded_bytes.decode("utf-8", errors="replace")
+                response["content_type"] = "text"
+                response["encoding_warning"] = "Some characters may not display correctly"
+            except Exception as e2:
+                logger.warning(f"Failed to decode content with any encoding: {str(e2)}")
+                response["content_type"] = "binary"
+                response["note"] = "Content could not be decoded as text"
+    
+    return response
+
+
+async def get_workspace_file_info(path: str) -> Dict[str, Any]:
+    """
+    Get information about a workspace file without downloading content.
+    
+    Args:
+        path: The workspace path to check
+        
+    Returns:
+        Response containing file information
+        
+    Raises:
+        DatabricksAPIError: If the API request fails
+    """
+    logger.info(f"Getting workspace file info for path: {path}")
+    
+    # Use the workspace list API to get file metadata
+    # Split the path to get directory and filename
+    import os
+    directory = os.path.dirname(path)
+    filename = os.path.basename(path)
+    
+    if not directory:
+        directory = "/"
+    
+    # List the directory to find the file
+    response = make_api_request("GET", "/api/2.0/workspace/list", params={"path": directory})
+    
+    # Find the specific file in the listing
+    if "objects" in response:
+        for obj in response["objects"]:
+            if obj.get("path") == path:
+                return obj
+    
+    raise DatabricksAPIError(f"File not found: {path}")
+
+
 def is_base64(content: str) -> bool:
     """
     Check if a string is already base64 encoded.
