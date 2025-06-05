@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "databricks-mcp-server"
-version = "0.1.2"
+version = "0.2.0"
 description = "A Model Completion Protocol (MCP) server for Databricks"
 authors = [
     {name = "Olivier Debeuf De Rijcker", email = "olivier@markov.bot"}
