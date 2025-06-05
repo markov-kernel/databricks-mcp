@@ -58,15 +58,43 @@ The Databricks MCP Server exposes the following tools:
 ### Job Management
 - **list_jobs**: List all Databricks jobs
 - **run_job**: Run a Databricks job
+- **create_job**: Create a new Databricks job
+- **delete_job**: Delete a Databricks job
+- **get_run_status**: Get status information for a job run
+- **list_job_runs**: List recent runs for a job
+- **cancel_run**: Cancel a running job
 
 ### Workspace Files
 - **list_notebooks**: List notebooks in a workspace directory
 - **export_notebook**: Export a notebook from the workspace
+- **import_notebook**: Import a notebook into the workspace
+- **delete_workspace_object**: Delete a notebook or directory
 - **get_workspace_file_content**: Retrieve content of any workspace file (JSON, notebooks, scripts, etc.)
 - **get_workspace_file_info**: Get metadata about workspace files
 
 ### File System
 - **list_files**: List files and directories in a DBFS path
+- **dbfs_put**: Upload a small file to DBFS
+- **dbfs_delete**: Delete a DBFS file or directory
+
+### Cluster Libraries
+- **install_library**: Install libraries on a cluster
+- **uninstall_library**: Remove libraries from a cluster
+- **list_cluster_libraries**: Check installed libraries on a cluster
+
+### Repos
+- **create_repo**: Clone a Git repository
+- **update_repo**: Update an existing repo
+- **list_repos**: List repos in the workspace
+
+### Unity Catalog
+- **list_catalogs**: List catalogs
+- **create_catalog**: Create a catalog
+- **list_schemas**: List schemas in a catalog
+- **create_schema**: Create a schema
+- **list_tables**: List tables in a schema
+- **create_table**: Execute a CREATE TABLE statement
+- **get_table_lineage**: Fetch lineage information for a table
 
 ### SQL Execution
 - **execute_sql**: Execute a SQL statement (warehouse_id optional if DATABRICKS_WAREHOUSE_ID env var is set)
@@ -285,6 +313,21 @@ await session.call_tool("get_workspace_file_content", {
 await session.call_tool("get_workspace_file_info", {
     "workspace_path": "/Users/user@domain.com/large_file.py"
 })
+```
+
+### Create Nightly ETL Job
+```python
+job_conf = {
+    "name": "Nightly ETL",
+    "tasks": [
+        {
+            "task_key": "etl",
+            "notebook_task": {"notebook_path": "/Repos/me/etl.py"},
+            "existing_cluster_id": "abc-123"
+        }
+    ]
+}
+await session.call_tool("create_job", job_conf)
 ```
 
 ## Project Structure
