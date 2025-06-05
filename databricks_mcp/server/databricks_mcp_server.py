@@ -35,7 +35,7 @@ class DatabricksMCPServer(FastMCP):
     def __init__(self):
         """Initialize the Databricks MCP server."""
         super().__init__(name="databricks-mcp", 
-                         version="0.2.0", 
+                         version="0.2.1", 
                          instructions="Use this server to manage Databricks resources")
         logger.info("Initializing Databricks MCP server")
         logger.info(f"Databricks host: {settings.DATABRICKS_HOST}")
@@ -164,6 +164,41 @@ class DatabricksMCPServer(FastMCP):
                 return [{"text": json.dumps(result)}]
             except Exception as e:
                 logger.error(f"Error running job: {str(e)}")
+                return [{"text": json.dumps({"error": str(e)})}]
+
+        @self.tool(
+            name="run_notebook",
+            description="Submit a one-time notebook run with parameters: notebook_path (required), existing_cluster_id (optional), base_parameters (optional)",
+        )
+        async def run_notebook_tool(params: Dict[str, Any]) -> List[TextContent]:
+            logger.info(f"Running notebook with params: {params}")
+            try:
+                result = await jobs.run_notebook(
+                    notebook_path=params.get("notebook_path"),
+                    existing_cluster_id=params.get("existing_cluster_id"),
+                    base_parameters=params.get("base_parameters"),
+                )
+                return [{"text": json.dumps(result)}]
+            except Exception as e:
+                logger.error(f"Error running notebook: {str(e)}")
+                return [{"text": json.dumps({"error": str(e)})}]
+
+        @self.tool(
+            name="sync_repo_and_run_notebook",
+            description="Pull a repo then run a notebook. Parameters: repo_id, notebook_path, existing_cluster_id (optional), base_parameters (optional)",
+        )
+        async def sync_repo_and_run_notebook(params: Dict[str, Any]) -> List[TextContent]:
+            logger.info(f"Syncing repo and running notebook with params: {params}")
+            try:
+                await repos.pull_repo(params.get("repo_id"))
+                result = await jobs.run_notebook(
+                    notebook_path=params.get("notebook_path"),
+                    existing_cluster_id=params.get("existing_cluster_id"),
+                    base_parameters=params.get("base_parameters"),
+                )
+                return [{"text": json.dumps(result)}]
+            except Exception as e:
+                logger.error(f"Error syncing repo and running notebook: {str(e)}")
                 return [{"text": json.dumps({"error": str(e)})}]
 
         @self.tool(
@@ -313,6 +348,19 @@ class DatabricksMCPServer(FastMCP):
                 return [{"text": json.dumps(result)}]
             except Exception as e:
                 logger.error(f"Error deleting file: {str(e)}")
+                return [{"text": json.dumps({"error": str(e)})}]
+        
+        @self.tool(
+            name="pull_repo",
+            description="Pull the latest commit for a repo with parameter: repo_id (required)",
+        )
+        async def pull_repo_tool(params: Dict[str, Any]) -> List[TextContent]:
+            logger.info(f"Pulling repo with params: {params}")
+            try:
+                result = await repos.pull_repo(params.get("repo_id"))
+                return [{"text": json.dumps(result)}]
+            except Exception as e:
+                logger.error(f"Error pulling repo: {str(e)}")
                 return [{"text": json.dumps({"error": str(e)})}]
         
         # SQL tools
