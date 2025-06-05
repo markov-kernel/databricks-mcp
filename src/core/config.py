@@ -33,6 +33,8 @@ class Settings(BaseSettings):
     # Databricks API configuration
     DATABRICKS_HOST: str = os.environ.get("DATABRICKS_HOST", "https://example.databricks.net")
     DATABRICKS_TOKEN: str = os.environ.get("DATABRICKS_TOKEN", "dapi_token_placeholder")
+    DATABRICKS_WAREHOUSE_ID: Optional[str] = os.environ.get("DATABRICKS_WAREHOUSE_ID")
+    DATABRICKS_WAREHOUSE_TOKEN: Optional[str] = os.environ.get("DATABRICKS_WAREHOUSE_TOKEN")
 
     # Server configuration
     SERVER_HOST: str = os.environ.get("SERVER_HOST", "0.0.0.0") 
