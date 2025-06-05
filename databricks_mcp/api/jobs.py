@@ -25,7 +25,7 @@ async def create_job(job_config: Dict[str, Any]) -> Dict[str, Any]:
         DatabricksAPIError: If the API request fails
     """
     logger.info("Creating new job")
-    return make_api_request("POST", "/api/2.0/jobs/create", data=job_config)
+    return await make_api_request("POST", "/api/2.0/jobs/create", data=job_config)
 
 
 async def run_job(job_id: int, notebook_params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
@@ -48,7 +48,7 @@ async def run_job(job_id: int, notebook_params: Optional[Dict[str, Any]] = None)
     if notebook_params:
         run_params["notebook_params"] = notebook_params
         
-    return make_api_request("POST", "/api/2.0/jobs/run-now", data=run_params)
+    return await make_api_request("POST", "/api/2.0/jobs/run-now", data=run_params)
 
 
 async def list_jobs() -> Dict[str, Any]:
@@ -62,7 +62,7 @@ async def list_jobs() -> Dict[str, Any]:
         DatabricksAPIError: If the API request fails
     """
     logger.info("Listing all jobs")
-    return make_api_request("GET", "/api/2.0/jobs/list")
+    return await make_api_request("GET", "/api/2.0/jobs/list")
 
 
 async def get_job(job_id: int) -> Dict[str, Any]:
@@ -79,7 +79,7 @@ async def get_job(job_id: int) -> Dict[str, Any]:
         DatabricksAPIError: If the API request fails
     """
     logger.info(f"Getting information for job: {job_id}")
-    return make_api_request("GET", "/api/2.0/jobs/get", params={"job_id": job_id})
+    return await make_api_request("GET", "/api/2.0/jobs/get", params={"job_id": job_id})
 
 
 async def update_job(job_id: int, new_settings: Dict[str, Any]) -> Dict[str, Any]:
@@ -103,7 +103,7 @@ async def update_job(job_id: int, new_settings: Dict[str, Any]) -> Dict[str, Any
         "new_settings": new_settings
     }
     
-    return make_api_request("POST", "/api/2.0/jobs/update", data=update_data)
+    return await make_api_request("POST", "/api/2.0/jobs/update", data=update_data)
 
 
 async def delete_job(job_id: int) -> Dict[str, Any]:
@@ -120,7 +120,7 @@ async def delete_job(job_id: int) -> Dict[str, Any]:
         DatabricksAPIError: If the API request fails
     """
     logger.info(f"Deleting job: {job_id}")
-    return make_api_request("POST", "/api/2.0/jobs/delete", data={"job_id": job_id})
+    return await make_api_request("POST", "/api/2.0/jobs/delete", data={"job_id": job_id})
 
 
 async def get_run(run_id: int) -> Dict[str, Any]:
@@ -137,7 +137,7 @@ async def get_run(run_id: int) -> Dict[str, Any]:
         DatabricksAPIError: If the API request fails
     """
     logger.info(f"Getting information for run: {run_id}")
-    return make_api_request("GET", "/api/2.0/jobs/runs/get", params={"run_id": run_id})
+    return await make_api_request("GET", "/api/2.0/jobs/runs/get", params={"run_id": run_id})
 
 
 async def cancel_run(run_id: int) -> Dict[str, Any]:
@@ -154,4 +154,4 @@ async def cancel_run(run_id: int) -> Dict[str, Any]:
         DatabricksAPIError: If the API request fails
     """
     logger.info(f"Cancelling run: {run_id}")
-    return make_api_request("POST", "/api/2.0/jobs/runs/cancel", data={"run_id": run_id}) 
+    return await make_api_request("POST", "/api/2.0/jobs/runs/cancel", data={"run_id": run_id})
