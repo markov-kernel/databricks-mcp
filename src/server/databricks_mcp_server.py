@@ -273,28 +273,23 @@ class DatabricksMCPServer(FastMCP):
                 return [{"text": json.dumps({"error": str(e)})}]
 
 
-async def async_main():
-    """Async main entry point for the MCP server."""
+def main():
+    """Main entry point for the MCP server."""
     try:
         logger.info("Starting Databricks MCP server")
+        
+        # Turn off buffering in stdout
+        if hasattr(sys.stdout, 'reconfigure'):
+            sys.stdout.reconfigure(line_buffering=True)
+        
         server = DatabricksMCPServer()
         
-        # Use the built-in method for stdio servers
-        # This is the recommended approach for MCP servers
-        await server.run_stdio_async()
+        # Use the FastMCP run method which handles async internally
+        server.run()
             
     except Exception as e:
         logger.error(f"Error in Databricks MCP server: {str(e)}", exc_info=True)
         raise
-
-
-def main():
-    """Synchronous main entry point for the MCP server (for setuptools entry point)."""
-    # Turn off buffering in stdout
-    if hasattr(sys.stdout, 'reconfigure'):
-        sys.stdout.reconfigure(line_buffering=True)
-    
-    asyncio.run(async_main())
 
 
 if __name__ == "__main__":
