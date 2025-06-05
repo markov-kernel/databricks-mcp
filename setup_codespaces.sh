@@ -53,6 +53,10 @@ uv pip install -e ".[dev]"
 echo "📥 Installing CLI dependencies..."
 uv pip install -e ".[cli]"
 
+# Alternative: If you prefer using pip and requirements.txt instead of uv:
+# pip install -r requirements.txt
+# pip install -r requirements-dev.txt
+
 # Verify installation
 echo "🔍 Verifying installation..."
 python -c "import src.server.databricks_mcp_server; print('✅ MCP server module imported successfully')"
