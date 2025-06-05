@@ -1,6 +1,8 @@
-# Markov Databricks MCP
+# Databricks MCP Server
 
 A Model Completion Protocol (MCP) server for Databricks that provides access to Databricks functionality via the MCP protocol. This allows LLM-powered tools to interact with Databricks clusters, jobs, notebooks, and more.
+
+> **Version 0.2.0** - Latest release with improved package structure and organization.
 
 ## 🚀 One-Click Install
 
@@ -52,6 +54,16 @@ The Databricks MCP Server exposes the following tools:
 
 ### SQL Execution
 - **execute_sql**: Execute a SQL statement (warehouse_id optional if DATABRICKS_WAREHOUSE_ID env var is set)
+
+## 🎉 Recent Updates (v0.2.0)
+
+**Major Package Refactoring:**
+- ✅ **Cleaner imports**: Package renamed from `src` to `databricks_mcp` for better clarity
+- ✅ **Organized structure**: Documentation and scripts moved to dedicated directories
+- ✅ **Simplified root**: Cleaner project root with better organization
+- ✅ **Same functionality**: All features work exactly the same, just with better structure
+
+**Backwards Compatibility:** All MCP tools and functionality remain unchanged. Only the internal package structure has been improved.
 
 ## Installation
 
@@ -262,29 +274,58 @@ await session.call_tool("get_workspace_file_info", {
 ## Project Structure
 
 ```
-databricks-mcp-server/
-├── src/                             # Source code
-│   ├── __init__.py                  # Makes src a package
+databricks-mcp/
+├── databricks_mcp/                  # Main package (renamed from src/)
+│   ├── __init__.py                  # Package initialization
 │   ├── __main__.py                  # Main entry point for the package
 │   ├── main.py                      # Entry point for the MCP server
 │   ├── api/                         # Databricks API clients
+│   │   ├── clusters.py              # Cluster management
+│   │   ├── jobs.py                  # Job management
+│   │   ├── notebooks.py             # Notebook operations
+│   │   ├── sql.py                   # SQL execution
+│   │   └── dbfs.py                  # DBFS operations
 │   ├── core/                        # Core functionality
+│   │   ├── config.py                # Configuration management
+│   │   ├── auth.py                  # Authentication
+│   │   └── utils.py                 # Utilities
 │   ├── server/                      # Server implementation
+│   │   ├── __main__.py              # Server entry point
 │   │   ├── databricks_mcp_server.py # Main MCP server
 │   │   └── app.py                   # FastAPI app for tests
 │   └── cli/                         # Command-line interface
+│       └── commands.py              # CLI commands
 ├── tests/                           # Test directory
-├── scripts/                         # Helper scripts
+│   ├── test_clusters.py             # Cluster tests
+│   ├── test_mcp_server.py           # Server tests
+│   └── test_*.py                    # Other test files
+├── scripts/                         # Helper scripts (organized)
 │   ├── start_mcp_server.ps1         # Server startup script (Windows)
-│   ├── run_tests.ps1                # Test runner script
+│   ├── start_mcp_server.sh          # Server startup script (Unix)
+│   ├── run_tests.ps1                # Test runner script (Windows)
+│   ├── run_tests.sh                 # Test runner script (Unix)
+│   ├── setup.ps1                    # Setup script (Windows)
+│   ├── setup.sh                     # Setup script (Unix)
 │   ├── show_clusters.py             # Script to show clusters
-│   └── show_notebooks.py            # Script to show notebooks
+│   ├── show_notebooks.py            # Script to show notebooks
+│   ├── setup_codespaces.sh          # Codespaces setup
+│   └── test_setup_local.sh          # Local test setup
 ├── examples/                        # Example usage
-├── docs/                            # Documentation
-└── pyproject.toml                   # Project configuration
+│   ├── direct_usage.py              # Direct usage examples
+│   └── mcp_client_usage.py          # MCP client examples
+├── docs/                            # Documentation (organized)
+│   ├── AGENTS.md                    # Agent documentation
+│   ├── project_structure.md         # Detailed structure docs
+│   ├── new_features.md              # Feature documentation
+│   └── phase1.md                    # Development phases
+├── .gitignore                       # Git ignore rules
+├── .cursor.json                     # Cursor configuration
+├── pyproject.toml                   # Package configuration
+├── uv.lock                          # Dependency lock file
+└── README.md                        # This file
 ```
 
-See `project_structure.md` for a more detailed view of the project structure.
+See `docs/project_structure.md` for a more detailed view of the project structure.
 
 ## Development
 
@@ -302,9 +343,9 @@ The project uses the following linting tools:
 
 ```bash
 # Run all linters
-uv run pylint src/ tests/
-uv run flake8 src/ tests/
-uv run mypy src/
+uv run pylint databricks_mcp/ tests/
+uv run flake8 databricks_mcp/ tests/
+uv run mypy databricks_mcp/
 ```
 
 ## Testing
@@ -329,7 +370,7 @@ You can also run the tests directly with pytest:
 uv run pytest tests/
 
 # Run with coverage report
-uv run pytest --cov=src tests/ --cov-report=term-missing
+uv run pytest --cov=databricks_mcp tests/ --cov-report=term-missing
 ```
 
 A minimum code coverage of 80% is the goal for the project.
