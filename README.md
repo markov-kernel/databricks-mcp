@@ -1,5 +1,3 @@
----
-
 <div align="center">
 
 ### 🤖 **Built by [Markov](https://markov.bot)** 
@@ -14,7 +12,7 @@ we're building the tools that power the next generation of AI-driven application
 
 </div>
 
----
+<br>
 
 # Databricks MCP Server
 
