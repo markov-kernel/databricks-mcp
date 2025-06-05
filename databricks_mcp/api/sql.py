@@ -70,7 +70,7 @@ async def execute_statement(
     if parameters:
         request_data["parameters"] = parameters
         
-    return make_api_request("POST", "/api/2.0/sql/statements", data=request_data)
+    return await make_api_request("POST", "/api/2.0/sql/statements", data=request_data)
 
 
 async def execute_and_wait(
@@ -158,7 +158,7 @@ async def get_statement_status(statement_id: str) -> Dict[str, Any]:
         DatabricksAPIError: If the API request fails
     """
     logger.info(f"Getting status of SQL statement: {statement_id}")
-    return make_api_request("GET", f"/api/2.0/sql/statements/{statement_id}", params={})
+    return await make_api_request("GET", f"/api/2.0/sql/statements/{statement_id}", params={})
 
 
 async def cancel_statement(statement_id: str) -> Dict[str, Any]:
@@ -175,4 +175,4 @@ async def cancel_statement(statement_id: str) -> Dict[str, Any]:
         DatabricksAPIError: If the API request fails
     """
     logger.info(f"Cancelling SQL statement: {statement_id}")
-    return make_api_request("POST", f"/api/2.0/sql/statements/{statement_id}/cancel", data={}) 
+    return await make_api_request("POST", f"/api/2.0/sql/statements/{statement_id}/cancel", data={})
