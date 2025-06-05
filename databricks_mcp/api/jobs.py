@@ -3,15 +3,18 @@ API for managing Databricks jobs.
 """
 
 import logging
-from typing import Any, Dict, List, Optional
+import asyncio
+import time
+from typing import Any, Dict, List, Optional, Union
 
+from databricks_mcp.core.models import Job
 from databricks_mcp.core.utils import DatabricksAPIError, make_api_request
 
 # Configure logging
 logger = logging.getLogger(__name__)
 
 
-async def create_job(job_config: Dict[str, Any]) -> Dict[str, Any]:
+async def create_job(job_config: Union[Job, Dict[str, Any]]) -> Dict[str, Any]:
     """
     Create a new Databricks job.
     
@@ -25,7 +28,13 @@ async def create_job(job_config: Dict[str, Any]) -> Dict[str, Any]:
         DatabricksAPIError: If the API request fails
     """
     logger.info("Creating new job")
-    return await make_api_request("POST", "/api/2.0/jobs/create", data=job_config)
+
+    if isinstance(job_config, Job):
+        payload = job_config.model_dump(exclude_none=True)
+    else:
+        payload = job_config
+
+    return await make_api_request("POST", "/api/2.2/jobs/create", data=payload)
 
 
 async def run_job(job_id: int, notebook_params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
@@ -120,7 +129,7 @@ async def delete_job(job_id: int) -> Dict[str, Any]:
         DatabricksAPIError: If the API request fails
     """
     logger.info(f"Deleting job: {job_id}")
-    return await make_api_request("POST", "/api/2.0/jobs/delete", data={"job_id": job_id})
+    return await make_api_request("POST", "/api/2.2/jobs/delete", data={"job_id": job_id})
 
 
 async def get_run(run_id: int) -> Dict[str, Any]:
@@ -137,7 +146,27 @@ async def get_run(run_id: int) -> Dict[str, Any]:
         DatabricksAPIError: If the API request fails
     """
     logger.info(f"Getting information for run: {run_id}")
-    return await make_api_request("GET", "/api/2.0/jobs/runs/get", params={"run_id": run_id})
+    return await make_api_request("GET", "/api/2.1/jobs/runs/get", params={"run_id": run_id})
+
+
+async def list_runs(job_id: Optional[int] = None, limit: int = 20) -> Dict[str, Any]:
+    """List job runs."""
+    logger.info("Listing job runs")
+    params: Dict[str, Any] = {"limit": limit}
+    if job_id is not None:
+        params["job_id"] = job_id
+    return await make_api_request("GET", "/api/2.1/jobs/runs/list", params=params)
+
+
+async def get_run_status(run_id: int) -> Dict[str, Any]:
+    """Get concise status information for a run."""
+    info = await get_run(run_id)
+    state = info.get("state", {})
+    return {
+        "state": state.get("result_state") or state.get("life_cycle_state"),
+        "life_cycle": state.get("life_cycle_state"),
+        "run_id": run_id,
+    }
 
 
 async def cancel_run(run_id: int) -> Dict[str, Any]:
@@ -154,4 +183,17 @@ async def cancel_run(run_id: int) -> Dict[str, Any]:
         DatabricksAPIError: If the API request fails
     """
     logger.info(f"Cancelling run: {run_id}")
-    return await make_api_request("POST", "/api/2.0/jobs/runs/cancel", data={"run_id": run_id})
+    return await make_api_request("POST", "/api/2.1/jobs/runs/cancel", data={"run_id": run_id})
+
+
+async def await_until_state(run_id: int, target_state: str = "TERMINATED", poll_interval: int = 5, timeout: int = 600) -> Dict[str, Any]:
+    """Poll a run until it reaches the desired lifecycle state."""
+    start = time.monotonic()
+    while True:
+        info = await get_run(run_id)
+        state = info.get("state", {}).get("life_cycle_state")
+        if state == target_state:
+            return info
+        if time.monotonic() - start > timeout:
+            raise TimeoutError(f"Run {run_id} did not reach {target_state} in {timeout}s")
+        await asyncio.sleep(poll_interval)

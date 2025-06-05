@@ -17,7 +17,7 @@ from mcp.server import FastMCP
 from mcp.types import TextContent
 from mcp.server.stdio import stdio_server
 
-from databricks_mcp.api import clusters, dbfs, jobs, notebooks, sql
+from databricks_mcp.api import clusters, dbfs, jobs, notebooks, sql, libraries, repos, unity_catalog
 from databricks_mcp.core.config import settings
 
 # Configure logging
@@ -125,6 +125,32 @@ class DatabricksMCPServer(FastMCP):
             except Exception as e:
                 logger.error(f"Error listing jobs: {str(e)}")
                 return [{"text": json.dumps({"error": str(e)})}]
+
+        @self.tool(
+            name="create_job",
+            description="Create a Databricks job. Provide name and tasks list.",
+        )
+        async def create_job_tool(params: Dict[str, Any]) -> List[TextContent]:
+            logger.info(f"Creating job with params: {params}")
+            try:
+                result = await jobs.create_job(params)
+                return [{"text": json.dumps(result)}]
+            except Exception as e:
+                logger.error(f"Error creating job: {str(e)}")
+                return [{"text": json.dumps({"error": str(e)})}]
+
+        @self.tool(
+            name="delete_job",
+            description="Delete a Databricks job with parameter: job_id",
+        )
+        async def delete_job_tool(params: Dict[str, Any]) -> List[TextContent]:
+            logger.info(f"Deleting job with params: {params}")
+            try:
+                result = await jobs.delete_job(params.get("job_id"))
+                return [{"text": json.dumps(result)}]
+            except Exception as e:
+                logger.error(f"Error deleting job: {str(e)}")
+                return [{"text": json.dumps({"error": str(e)})}]
         
         @self.tool(
             name="run_job",
@@ -138,6 +164,45 @@ class DatabricksMCPServer(FastMCP):
                 return [{"text": json.dumps(result)}]
             except Exception as e:
                 logger.error(f"Error running job: {str(e)}")
+                return [{"text": json.dumps({"error": str(e)})}]
+
+        @self.tool(
+            name="get_run_status",
+            description="Get status for a job run with parameter: run_id",
+        )
+        async def get_run_status(params: Dict[str, Any]) -> List[TextContent]:
+            logger.info(f"Getting run status with params: {params}")
+            try:
+                result = await jobs.get_run_status(params.get("run_id"))
+                return [{"text": json.dumps(result)}]
+            except Exception as e:
+                logger.error(f"Error getting run status: {str(e)}")
+                return [{"text": json.dumps({"error": str(e)})}]
+
+        @self.tool(
+            name="list_job_runs",
+            description="List recent runs for a job with parameter: job_id",
+        )
+        async def list_job_runs(params: Dict[str, Any]) -> List[TextContent]:
+            logger.info(f"Listing job runs with params: {params}")
+            try:
+                result = await jobs.list_runs(params.get("job_id"))
+                return [{"text": json.dumps(result)}]
+            except Exception as e:
+                logger.error(f"Error listing job runs: {str(e)}")
+                return [{"text": json.dumps({"error": str(e)})}]
+
+        @self.tool(
+            name="cancel_run",
+            description="Cancel a job run with parameter: run_id",
+        )
+        async def cancel_run_tool(params: Dict[str, Any]) -> List[TextContent]:
+            logger.info(f"Cancelling run with params: {params}")
+            try:
+                result = await jobs.cancel_run(params.get("run_id"))
+                return [{"text": json.dumps(result)}]
+            except Exception as e:
+                logger.error(f"Error cancelling run: {str(e)}")
                 return [{"text": json.dumps({"error": str(e)})}]
         
         # Notebook management tools
@@ -174,6 +239,37 @@ class DatabricksMCPServer(FastMCP):
             except Exception as e:
                 logger.error(f"Error exporting notebook: {str(e)}")
                 return [{"text": json.dumps({"error": str(e)})}]
+
+        @self.tool(
+            name="import_notebook",
+            description="Import a notebook; parameters: path, content (base64 or text), format (optional)",
+        )
+        async def import_notebook_tool(params: Dict[str, Any]) -> List[TextContent]:
+            logger.info(f"Importing notebook with params: {params}")
+            try:
+                path = params.get("path")
+                content = params.get("content")
+                fmt = params.get("format", "SOURCE")
+                result = await notebooks.import_notebook(path, content, fmt)
+                return [{"text": json.dumps(result)}]
+            except Exception as e:
+                logger.error(f"Error importing notebook: {str(e)}")
+                return [{"text": json.dumps({"error": str(e)})}]
+
+        @self.tool(
+            name="delete_workspace_object",
+            description="Delete a notebook or directory with parameters: path, recursive (optional)",
+        )
+        async def delete_workspace_object(params: Dict[str, Any]) -> List[TextContent]:
+            logger.info(f"Deleting workspace object with params: {params}")
+            try:
+                result = await notebooks.delete_notebook(
+                    params.get("path"), params.get("recursive", False)
+                )
+                return [{"text": json.dumps(result)}]
+            except Exception as e:
+                logger.error(f"Error deleting workspace object: {str(e)}")
+                return [{"text": json.dumps({"error": str(e)})}]
         
         # DBFS tools
         @self.tool(
@@ -187,6 +283,36 @@ class DatabricksMCPServer(FastMCP):
                 return [{"text": json.dumps(result)}]
             except Exception as e:
                 logger.error(f"Error listing files: {str(e)}")
+                return [{"text": json.dumps({"error": str(e)})}]
+
+        @self.tool(
+            name="dbfs_put",
+            description="Upload a small file to DBFS with parameters: dbfs_path, content_base64",
+        )
+        async def dbfs_put(params: Dict[str, Any]) -> List[TextContent]:
+            logger.info(f"Uploading file to DBFS with params: {params}")
+            try:
+                path = params.get("dbfs_path")
+                content = params.get("content_base64", "").encode()
+                import base64
+                data = base64.b64decode(content)
+                result = await dbfs.put_file(path, data)
+                return [{"text": json.dumps(result)}]
+            except Exception as e:
+                logger.error(f"Error uploading file: {str(e)}")
+                return [{"text": json.dumps({"error": str(e)})}]
+
+        @self.tool(
+            name="dbfs_delete",
+            description="Delete a file or directory in DBFS with parameters: dbfs_path, recursive (optional)",
+        )
+        async def dbfs_delete(params: Dict[str, Any]) -> List[TextContent]:
+            logger.info(f"Deleting DBFS path with params: {params}")
+            try:
+                result = await dbfs.delete_file(params.get("dbfs_path"), params.get("recursive", False))
+                return [{"text": json.dumps(result)}]
+            except Exception as e:
+                logger.error(f"Error deleting file: {str(e)}")
                 return [{"text": json.dumps({"error": str(e)})}]
         
         # SQL tools
@@ -217,6 +343,95 @@ class DatabricksMCPServer(FastMCP):
                 return [{"text": json.dumps(result)}]
             except Exception as e:
                 logger.error(f"Error executing SQL: {str(e)}")
+                return [{"text": json.dumps({"error": str(e)})}]
+
+        # Cluster library tools
+        @self.tool(
+            name="install_library",
+            description="Install a library on a cluster with parameters: cluster_id, libraries",
+        )
+        async def install_library_tool(params: Dict[str, Any]) -> List[TextContent]:
+            logger.info(f"Installing library with params: {params}")
+            try:
+                result = await libraries.install_library(params.get("cluster_id"), params.get("libraries", []))
+                return [{"text": json.dumps(result)}]
+            except Exception as e:
+                logger.error(f"Error installing library: {str(e)}")
+                return [{"text": json.dumps({"error": str(e)})}]
+
+        @self.tool(
+            name="uninstall_library",
+            description="Uninstall a library from a cluster with parameters: cluster_id, libraries",
+        )
+        async def uninstall_library_tool(params: Dict[str, Any]) -> List[TextContent]:
+            logger.info(f"Uninstalling library with params: {params}")
+            try:
+                result = await libraries.uninstall_library(params.get("cluster_id"), params.get("libraries", []))
+                return [{"text": json.dumps(result)}]
+            except Exception as e:
+                logger.error(f"Error uninstalling library: {str(e)}")
+                return [{"text": json.dumps({"error": str(e)})}]
+
+        @self.tool(
+            name="list_cluster_libraries",
+            description="List library status for a cluster with parameter: cluster_id",
+        )
+        async def list_cluster_libraries_tool(params: Dict[str, Any]) -> List[TextContent]:
+            logger.info(f"Listing cluster libraries with params: {params}")
+            try:
+                result = await libraries.list_cluster_libraries(params.get("cluster_id"))
+                return [{"text": json.dumps(result)}]
+            except Exception as e:
+                logger.error(f"Error listing cluster libraries: {str(e)}")
+                return [{"text": json.dumps({"error": str(e)})}]
+
+        # Repos tools
+        @self.tool(
+            name="create_repo",
+            description="Create or clone a repo with parameters: url, provider, branch (optional)",
+        )
+        async def create_repo_tool(params: Dict[str, Any]) -> List[TextContent]:
+            logger.info(f"Creating repo with params: {params}")
+            try:
+                result = await repos.create_repo(
+                    params.get("url"),
+                    params.get("provider"),
+                    branch=params.get("branch"),
+                    path=params.get("path"),
+                )
+                return [{"text": json.dumps(result)}]
+            except Exception as e:
+                logger.error(f"Error creating repo: {str(e)}")
+                return [{"text": json.dumps({"error": str(e)})}]
+
+        @self.tool(
+            name="update_repo",
+            description="Update repo branch with parameters: repo_id, branch or tag",
+        )
+        async def update_repo_tool(params: Dict[str, Any]) -> List[TextContent]:
+            logger.info(f"Updating repo with params: {params}")
+            try:
+                result = await repos.update_repo(
+                    params.get("repo_id"),
+                    branch=params.get("branch"),
+                    tag=params.get("tag"),
+                )
+                return [{"text": json.dumps(result)}]
+            except Exception as e:
+                logger.error(f"Error updating repo: {str(e)}")
+                return [{"text": json.dumps({"error": str(e)})}]
+
+        @self.tool(
+            name="list_repos",
+            description="List repos with optional path_prefix",
+        )
+        async def list_repos_tool(params: Dict[str, Any]) -> List[TextContent]:
+            logger.info(f"Listing repos with params: {params}")
+            try:
+                result = await repos.list_repos(params.get("path_prefix"))
+                return [{"text": json.dumps(result)}]
+            except Exception as e:
+                logger.error(f"Error listing repos: {str(e)}")
                 return [{"text": json.dumps({"error": str(e)})}]
         
         # Workspace file tools
@@ -259,17 +474,85 @@ class DatabricksMCPServer(FastMCP):
                     actual_params = params['params']
                 else:
                     actual_params = params
-                    
+
                 workspace_path = actual_params.get("workspace_path")
-                
+
                 if not workspace_path:
                     raise ValueError("workspace_path is required")
-                
+
                 result = await notebooks.get_workspace_file_info(workspace_path)
                 return [{"text": json.dumps(result)}]
-                
+
             except Exception as e:
                 logger.error(f"Error getting workspace file info: {str(e)}")
+                return [{"text": json.dumps({"error": str(e)})}]
+
+        # Unity Catalog tools
+        @self.tool(name="list_catalogs", description="List catalogs in Unity Catalog")
+        async def list_catalogs_tool(params: Dict[str, Any]) -> List[TextContent]:
+            try:
+                result = await unity_catalog.list_catalogs()
+                return [{"text": json.dumps(result)}]
+            except Exception as e:
+                logger.error(f"Error listing catalogs: {str(e)}")
+                return [{"text": json.dumps({"error": str(e)})}]
+
+        @self.tool(name="create_catalog", description="Create a catalog with parameters: name, comment")
+        async def create_catalog_tool(params: Dict[str, Any]) -> List[TextContent]:
+            try:
+                result = await unity_catalog.create_catalog(params.get("name"), params.get("comment"))
+                return [{"text": json.dumps(result)}]
+            except Exception as e:
+                logger.error(f"Error creating catalog: {str(e)}")
+                return [{"text": json.dumps({"error": str(e)})}]
+
+        @self.tool(name="list_schemas", description="List schemas for a catalog with parameter: catalog_name")
+        async def list_schemas_tool(params: Dict[str, Any]) -> List[TextContent]:
+            try:
+                result = await unity_catalog.list_schemas(params.get("catalog_name"))
+                return [{"text": json.dumps(result)}]
+            except Exception as e:
+                logger.error(f"Error listing schemas: {str(e)}")
+                return [{"text": json.dumps({"error": str(e)})}]
+
+        @self.tool(name="create_schema", description="Create schema with parameters: catalog_name, name, comment")
+        async def create_schema_tool(params: Dict[str, Any]) -> List[TextContent]:
+            try:
+                result = await unity_catalog.create_schema(
+                    params.get("catalog_name"), params.get("name"), params.get("comment")
+                )
+                return [{"text": json.dumps(result)}]
+            except Exception as e:
+                logger.error(f"Error creating schema: {str(e)}")
+                return [{"text": json.dumps({"error": str(e)})}]
+
+        @self.tool(name="list_tables", description="List tables with parameters: catalog_name, schema_name")
+        async def list_tables_tool(params: Dict[str, Any]) -> List[TextContent]:
+            try:
+                result = await unity_catalog.list_tables(
+                    params.get("catalog_name"), params.get("schema_name")
+                )
+                return [{"text": json.dumps(result)}]
+            except Exception as e:
+                logger.error(f"Error listing tables: {str(e)}")
+                return [{"text": json.dumps({"error": str(e)})}]
+
+        @self.tool(name="create_table", description="Create table via SQL with parameters: warehouse_id, statement")
+        async def create_table_tool(params: Dict[str, Any]) -> List[TextContent]:
+            try:
+                result = await unity_catalog.create_table(params.get("warehouse_id"), params.get("statement"))
+                return [{"text": json.dumps(result)}]
+            except Exception as e:
+                logger.error(f"Error creating table: {str(e)}")
+                return [{"text": json.dumps({"error": str(e)})}]
+
+        @self.tool(name="get_table_lineage", description="Get table lineage with parameter: full_name")
+        async def get_table_lineage_tool(params: Dict[str, Any]) -> List[TextContent]:
+            try:
+                result = await unity_catalog.get_table_lineage(params.get("full_name"))
+                return [{"text": json.dumps(result)}]
+            except Exception as e:
+                logger.error(f"Error getting lineage: {str(e)}")
                 return [{"text": json.dumps({"error": str(e)})}]
 
 
