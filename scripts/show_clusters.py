@@ -5,7 +5,7 @@ Simple script to show clusters from Databricks
 import asyncio
 import json
 import sys
-from src.api import clusters
+from databricks_mcp.api import clusters
 
 async def show_all_clusters():
     """Show all clusters in the Databricks workspace."""

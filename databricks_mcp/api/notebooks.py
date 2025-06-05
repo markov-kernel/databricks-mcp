@@ -6,7 +6,7 @@ import base64
 import logging
 from typing import Any, Dict, List, Optional
 
-from src.core.utils import DatabricksAPIError, make_api_request
+from databricks_mcp.core.utils import DatabricksAPIError, make_api_request
 
 # Configure logging
 logger = logging.getLogger(__name__)

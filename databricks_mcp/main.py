@@ -8,8 +8,8 @@ import os
 import sys
 from typing import Optional
 
-from src.core.config import settings
-from src.server.databricks_mcp_server import DatabricksMCPServer
+from databricks_mcp.core.config import settings
+from databricks_mcp.server.databricks_mcp_server import DatabricksMCPServer
 
 # Function to start the server - extracted from the server file
 async def start_mcp_server():

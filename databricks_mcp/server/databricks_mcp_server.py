@@ -17,8 +17,8 @@ from mcp.server import FastMCP
 from mcp.types import TextContent
 from mcp.server.stdio import stdio_server
 
-from src.api import clusters, dbfs, jobs, notebooks, sql
-from src.core.config import settings
+from databricks_mcp.api import clusters, dbfs, jobs, notebooks, sql
+from databricks_mcp.core.config import settings
 
 # Configure logging
 logging.basicConfig(

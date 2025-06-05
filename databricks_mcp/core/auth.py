@@ -8,7 +8,7 @@ from typing import Dict, Optional
 from fastapi import Depends, HTTPException, Security, status
 from fastapi.security import APIKeyHeader
 
-from src.core.config import settings
+from databricks_mcp.core.config import settings
 
 # Configure logging
 logger = logging.getLogger(__name__)

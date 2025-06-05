@@ -29,7 +29,7 @@ Write-Host "Running CLI tool listing with a $timeout second timeout..."
 $job = Start-Job -ScriptBlock { 
     cd $using:PWD
     cd ..
-    uv run -m src.cli.commands list-tools
+    uv run -m databricks_mcp.cli.commands list-tools
 }
 
 # Monitor the job and output in real-time

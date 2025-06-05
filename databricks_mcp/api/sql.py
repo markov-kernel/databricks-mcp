@@ -5,8 +5,8 @@ API for executing SQL statements on Databricks.
 import logging
 from typing import Any, Dict, List, Optional
 
-from src.core.utils import DatabricksAPIError, make_api_request
-from src.core.config import settings
+from databricks_mcp.core.utils import DatabricksAPIError, make_api_request
+from databricks_mcp.core.config import settings
 
 # Configure logging
 logger = logging.getLogger(__name__)

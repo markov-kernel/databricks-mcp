@@ -47,7 +47,7 @@ uv pip install -e ".[dev]"
 # Verify installation
 Write-Host "🔍 Verifying installation..." -ForegroundColor Blue
 try {
-    python -c "import src.server.databricks_mcp_server; print('✅ MCP server module imported successfully')"
+    python -c "import databricks_mcp.server.databricks_mcp_server; print('✅ MCP server module imported successfully')"
     Write-Host "✅ Installation verified successfully" -ForegroundColor Green
 } catch {
     Write-Host "❌ Installation verification failed" -ForegroundColor Red

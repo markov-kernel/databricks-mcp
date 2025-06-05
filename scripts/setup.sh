@@ -37,7 +37,7 @@ uv pip install -e ".[dev]"
 
 # Verify installation
 echo "🔍 Verifying installation..."
-python -c "import src.server.databricks_mcp_server; print('✅ MCP server module imported successfully')"
+python -c "import databricks_mcp.server.databricks_mcp_server; print('✅ MCP server module imported successfully')"
 
 echo ""
 echo "🎉 Setup complete!"

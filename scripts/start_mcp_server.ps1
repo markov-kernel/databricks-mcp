@@ -40,12 +40,12 @@ if (Get-Item -Path Env:DATABRICKS_HOST -ErrorAction SilentlyContinue) {
 
 # Try to run the module using python -m
 Write-Host "Attempting to start server using module path..."
-python -m src.main
+python -m databricks_mcp.main
 
 # If the above fails, fallback to direct script execution
 if ($LASTEXITCODE -ne 0) {
     Write-Host "Module execution failed, trying direct script execution..."
-    python "$PSScriptRoot\..\src\main.py"
+    python "$PSScriptRoot\..\databricks_mcp\main.py"
 }
 
 Write-Host "Server stopped at $(Get-Date)" 

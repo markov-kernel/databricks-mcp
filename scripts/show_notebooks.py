@@ -5,7 +5,7 @@ Simple script to show notebooks from Databricks
 import asyncio
 import json
 import sys
-from src.api import notebooks
+from databricks_mcp.api import notebooks
 
 async def show_all_notebooks():
     """Show all notebooks in the Databricks workspace."""

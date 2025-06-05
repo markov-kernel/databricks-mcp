@@ -16,7 +16,7 @@ from typing import Any, Dict, List, Optional
 # Add the parent directory to the Python path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from src.server.databricks_mcp_server import DatabricksMCPServer
+from databricks_mcp.server.databricks_mcp_server import DatabricksMCPServer
 
 # Set up logging
 logging.basicConfig(
