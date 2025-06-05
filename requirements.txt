@@ -1,4 +1,0 @@
-# Core dependencies for Databricks MCP Server
-mcp[cli]>=1.2.0
-httpx>=0.28.0
-databricks-sdk>=0.40.0 
