@@ -17,6 +17,7 @@ build/
 # Local development settings
 .env
 .env.local
+.pypirc
 
 # IDE settings
 .idea/
