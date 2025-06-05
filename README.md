@@ -18,7 +18,7 @@ we're building the tools that power the next generation of AI-driven application
 
 A Model Completion Protocol (MCP) server for Databricks that provides access to Databricks functionality via the MCP protocol. This allows LLM-powered tools to interact with Databricks clusters, jobs, notebooks, and more.
 
-> **Version 0.2.0** - Latest release with improved package structure and organization.
+> **Version 0.2.1** - Latest release with improved package structure and organization.
 
 ## 🚀 One-Click Install
 
@@ -59,16 +59,44 @@ The Databricks MCP Server exposes the following tools:
 - **list_jobs**: List all Databricks jobs
 - **run_job**: Run a Databricks job
 - **run_notebook**: Submit and wait for a one-time notebook run
+- **create_job**: Create a new Databricks job
+- **delete_job**: Delete a Databricks job
+- **get_run_status**: Get status information for a job run
+- **list_job_runs**: List recent runs for a job
+- **cancel_run**: Cancel a running job
 
 ### Workspace Files
 - **list_notebooks**: List notebooks in a workspace directory
 - **export_notebook**: Export a notebook from the workspace
+- **import_notebook**: Import a notebook into the workspace
+- **delete_workspace_object**: Delete a notebook or directory
 - **get_workspace_file_content**: Retrieve content of any workspace file (JSON, notebooks, scripts, etc.)
 - **get_workspace_file_info**: Get metadata about workspace files
 
 ### File System
 - **list_files**: List files and directories in a DBFS path
+- **dbfs_put**: Upload a small file to DBFS
+- **dbfs_delete**: Delete a DBFS file or directory
+
+### Cluster Libraries
+- **install_library**: Install libraries on a cluster
+- **uninstall_library**: Remove libraries from a cluster
+- **list_cluster_libraries**: Check installed libraries on a cluster
+
+### Repos
+- **create_repo**: Clone a Git repository
+- **update_repo**: Update an existing repo
+- **list_repos**: List repos in the workspace
 - **pull_repo**: Pull the latest commit for a Databricks repo
+
+### Unity Catalog
+- **list_catalogs**: List catalogs
+- **create_catalog**: Create a catalog
+- **list_schemas**: List schemas in a catalog
+- **create_schema**: Create a schema
+- **list_tables**: List tables in a schema
+- **create_table**: Execute a CREATE TABLE statement
+- **get_table_lineage**: Fetch lineage information for a table
 
 ### Composite
 - **sync_repo_and_run_notebook**: Pull a repo and execute a notebook in one call
@@ -76,9 +104,14 @@ The Databricks MCP Server exposes the following tools:
 ### SQL Execution
 - **execute_sql**: Execute a SQL statement (warehouse_id optional if DATABRICKS_WAREHOUSE_ID env var is set)
 
-## 🎉 Recent Updates (v0.2.0)
+## 🎉 Recent Updates (v0.2.1)
 
-**Major Package Refactoring:**
+**Latest Improvements:**
+- ✅ **Enhanced Codespaces support**: Fixed setup scripts and environment variables for better GitHub Codespaces integration
+- ✅ **Documentation improvements**: Resolved YAML parsing issues and enhanced README formatting
+- ✅ **Publishing improvements**: Added PyPI configuration and streamlined package publishing process
+
+**Previous Major Update (v0.2.0) - Package Refactoring:**
 - ✅ **Cleaner imports**: Package renamed from `src` to `databricks_mcp` for better clarity
 - ✅ **Organized structure**: Documentation and scripts moved to dedicated directories
 - ✅ **Simplified root**: Cleaner project root with better organization
@@ -298,6 +331,21 @@ await session.call_tool("sync_repo_and_run_notebook", {
     "repo_id": 123,
     "notebook_path": "/Repos/user/project/run_me"
 })
+```
+
+### Create Nightly ETL Job
+```python
+job_conf = {
+    "name": "Nightly ETL",
+    "tasks": [
+        {
+            "task_key": "etl",
+            "notebook_task": {"notebook_path": "/Repos/me/etl.py"},
+            "existing_cluster_id": "abc-123"
+        }
+    ]
+}
+await session.call_tool("create_job", job_conf)
 ```
 
 ## Project Structure
