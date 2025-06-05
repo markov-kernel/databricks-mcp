@@ -10,7 +10,7 @@ import logging
 import sys
 from typing import List, Optional
 
-from src.server.databricks_mcp_server import DatabricksMCPServer, main as server_main
+from databricks_mcp.server.databricks_mcp_server import DatabricksMCPServer, main as server_main
 
 # Configure logging
 logging.basicConfig(

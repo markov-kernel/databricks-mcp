@@ -9,7 +9,7 @@ from typing import Any, Dict, List, Optional, Union
 import requests
 from requests.exceptions import RequestException
 
-from src.core.config import get_api_headers, get_databricks_api_url
+from databricks_mcp.core.config import get_api_headers, get_databricks_api_url
 
 # Configure logging
 logging.basicConfig(

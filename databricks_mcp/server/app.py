@@ -7,8 +7,8 @@ The actual implementation uses the MCP protocol directly.
 
 from fastapi import FastAPI
 
-from src.api import clusters, dbfs, jobs, notebooks, sql
-from src.core.config import settings
+from databricks_mcp.api import clusters, dbfs, jobs, notebooks, sql
+from databricks_mcp.core.config import settings
 
 
 def create_app() -> FastAPI:

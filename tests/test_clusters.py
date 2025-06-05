@@ -10,8 +10,8 @@ import pytest
 from fastapi import status
 from fastapi.testclient import TestClient
 
-from src.api import clusters
-from src.server.app import create_app
+from databricks_mcp.api import clusters
+from databricks_mcp.server.app import create_app
 
 
 @pytest.fixture

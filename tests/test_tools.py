@@ -10,7 +10,7 @@ import logging
 import sys
 from typing import Dict, Any, List
 
-from src.server.databricks_mcp_server import DatabricksMCPServer
+from databricks_mcp.server.databricks_mcp_server import DatabricksMCPServer
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')

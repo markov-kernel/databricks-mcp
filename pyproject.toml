@@ -47,11 +47,11 @@ dev = [
 ]
 
 [project.scripts]
-databricks-mcp-server = "src.server.databricks_mcp_server:main"
-databricks-mcp = "src.cli.commands:main"
+databricks-mcp-server = "databricks_mcp.server.databricks_mcp_server:main"
+databricks-mcp = "databricks_mcp.cli.commands:main"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src"]
+packages = ["databricks_mcp"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
