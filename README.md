@@ -1,3 +1,19 @@
+---
+
+<div align="center">
+
+### 🤖 **Built by [Markov](https://markov.bot)** 
+**When AI changes everything, you start from scratch.**
+
+*Markov specializes in cutting-edge AI solutions and automation. From neural ledgers to MCP servers,  
+we're building the tools that power the next generation of AI-driven applications.*
+
+**[🌐 Visit markov.bot](https://markov.bot) • [✉️ Get in Touch](mailto:olivier@markov.bot)**
+
+</div>
+
+---
+
 # Databricks MCP Server
 
 A Model Completion Protocol (MCP) server for Databricks that provides access to Databricks functionality via the MCP protocol. This allows LLM-powered tools to interact with Databricks clusters, jobs, notebooks, and more.
