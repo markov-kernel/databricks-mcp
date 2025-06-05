@@ -51,7 +51,7 @@ async def import_notebook(
     if language:
         import_data["language"] = language
         
-    return make_api_request("POST", "/api/2.0/workspace/import", data=import_data)
+    return await make_api_request("POST", "/api/2.0/workspace/import", data=import_data)
 
 
 async def export_notebook(
@@ -78,7 +78,7 @@ async def export_notebook(
         "format": format,
     }
     
-    response = make_api_request("GET", "/api/2.0/workspace/export", params=params)
+    response = await make_api_request("GET", "/api/2.0/workspace/export", params=params)
     
     # Optionally decode base64 content
     if "content" in response and format in ["SOURCE", "JUPYTER"]:
@@ -104,7 +104,7 @@ async def list_notebooks(path: str) -> Dict[str, Any]:
         DatabricksAPIError: If the API request fails
     """
     logger.info(f"Listing notebooks in path: {path}")
-    return make_api_request("GET", "/api/2.0/workspace/list", params={"path": path})
+    return await make_api_request("GET", "/api/2.0/workspace/list", params={"path": path})
 
 
 async def delete_notebook(path: str, recursive: bool = False) -> Dict[str, Any]:
@@ -122,9 +122,9 @@ async def delete_notebook(path: str, recursive: bool = False) -> Dict[str, Any]:
         DatabricksAPIError: If the API request fails
     """
     logger.info(f"Deleting path: {path}")
-    return make_api_request(
-        "POST", 
-        "/api/2.0/workspace/delete", 
+    return await make_api_request(
+        "POST",
+        "/api/2.0/workspace/delete",
         data={"path": path, "recursive": recursive}
     )
 
@@ -143,7 +143,7 @@ async def create_directory(path: str) -> Dict[str, Any]:
         DatabricksAPIError: If the API request fails
     """
     logger.info(f"Creating directory: {path}")
-    return make_api_request("POST", "/api/2.0/workspace/mkdirs", data={"path": path})
+    return await make_api_request("POST", "/api/2.0/workspace/mkdirs", data={"path": path})
 
 
 async def export_workspace_file(
@@ -170,7 +170,7 @@ async def export_workspace_file(
         "format": format,
     }
     
-    response = make_api_request("GET", "/api/2.0/workspace/export", params=params)
+    response = await make_api_request("GET", "/api/2.0/workspace/export", params=params)
     
     # Always try to decode base64 content for SOURCE format
     if "content" in response and format == "SOURCE":
@@ -229,7 +229,7 @@ async def get_workspace_file_info(path: str) -> Dict[str, Any]:
         directory = "/"
     
     # List the directory to find the file
-    response = make_api_request("GET", "/api/2.0/workspace/list", params={"path": directory})
+    response = await make_api_request("GET", "/api/2.0/workspace/list", params={"path": directory})
     
     # Find the specific file in the listing
     if "objects" in response:

@@ -6,8 +6,8 @@ import json
 import logging
 from typing import Any, Dict, List, Optional, Union
 
-import requests
-from requests.exceptions import RequestException
+import httpx
+from httpx import HTTPError
 
 from databricks_mcp.core.config import get_api_headers, get_databricks_api_url
 
@@ -29,7 +29,7 @@ class DatabricksAPIError(Exception):
         super().__init__(self.message)
 
 
-def make_api_request(
+async def make_api_request(
     method: str,
     endpoint: str,
     data: Optional[Dict[str, Any]] = None,
@@ -54,39 +54,32 @@ def make_api_request(
     """
     url = get_databricks_api_url(endpoint)
     headers = get_api_headers()
-    
+
     try:
-        # Log the request (omit sensitive information)
         safe_data = "**REDACTED**" if data else None
-        logger.debug(f"API Request: {method} {url} Params: {params} Data: {safe_data}")
-        
-        # Convert data to JSON string if provided
-        json_data = json.dumps(data) if data and not files else data
-        
-        # Make the request
-        response = requests.request(
-            method=method,
-            url=url,
-            headers=headers,
-            params=params,
-            data=json_data if not files else data,
-            files=files,
-        )
-        
-        # Check for HTTP errors
+        logger.debug("API Request: %s %s Params: %s Data: %s", method, url, params, safe_data)
+
+        async with httpx.AsyncClient() as client:
+            response = await client.request(
+                method=method,
+                url=url,
+                headers=headers,
+                params=params,
+                json=data if not files else None,
+                data=data if files else None,
+                files=files,
+            )
+
         response.raise_for_status()
-        
-        # Parse response
+
         if response.content:
             return response.json()
         return {}
-        
-    except RequestException as e:
-        # Handle request exceptions
+
+    except HTTPError as e:
         status_code = getattr(e.response, "status_code", None) if hasattr(e, "response") else None
         error_msg = f"API request failed: {str(e)}"
-        
-        # Try to extract error details from response
+
         error_response = None
         if hasattr(e, "response") and e.response is not None:
             try:
@@ -94,11 +87,9 @@ def make_api_request(
                 error_msg = f"{error_msg} - {error_response.get('error', '')}"
             except ValueError:
                 error_response = e.response.text
-        
-        # Log the error
-        logger.error(f"API Error: {error_msg}", exc_info=True)
-        
-        # Raise custom exception
+
+        logger.error("API Error: %s", error_msg, exc_info=True)
+
         raise DatabricksAPIError(error_msg, status_code, error_response) from e
 
 

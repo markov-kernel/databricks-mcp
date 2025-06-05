@@ -37,7 +37,7 @@ async def put_file(
     # Convert bytes to base64
     content_base64 = base64.b64encode(file_content).decode("utf-8")
     
-    return make_api_request(
+    return await make_api_request(
         "POST",
         "/api/2.0/dbfs/put",
         data={
@@ -76,7 +76,7 @@ async def upload_large_file(
         raise FileNotFoundError(f"Local file not found: {local_file_path}")
     
     # Create a handle for the upload
-    create_response = make_api_request(
+    create_response = await make_api_request(
         "POST",
         "/api/2.0/dbfs/create",
         data={
@@ -99,7 +99,7 @@ async def upload_large_file(
                 chunk_base64 = base64.b64encode(chunk).decode("utf-8")
                 
                 # Add to handle
-                make_api_request(
+                await make_api_request(
                     "POST",
                     "/api/2.0/dbfs/add-block",
                     data={
@@ -112,7 +112,7 @@ async def upload_large_file(
                 logger.debug(f"Uploaded chunk {chunk_index}")
         
         # Close the handle
-        return make_api_request(
+        return await make_api_request(
             "POST",
             "/api/2.0/dbfs/close",
             data={"handle": handle},
@@ -121,7 +121,7 @@ async def upload_large_file(
     except Exception as e:
         # Attempt to abort the upload on error
         try:
-            make_api_request(
+            await make_api_request(
                 "POST",
                 "/api/2.0/dbfs/close",
                 data={"handle": handle},
@@ -154,7 +154,7 @@ async def get_file(
     """
     logger.info(f"Reading file from DBFS path: {dbfs_path}")
     
-    response = make_api_request(
+    response = await make_api_request(
         "GET",
         "/api/2.0/dbfs/read",
         params={
@@ -188,7 +188,7 @@ async def list_files(dbfs_path: str) -> Dict[str, Any]:
         DatabricksAPIError: If the API request fails
     """
     logger.info(f"Listing files in DBFS path: {dbfs_path}")
-    return make_api_request("GET", "/api/2.0/dbfs/list", params={"path": dbfs_path})
+    return await make_api_request("GET", "/api/2.0/dbfs/list", params={"path": dbfs_path})
 
 
 async def delete_file(
@@ -209,7 +209,7 @@ async def delete_file(
         DatabricksAPIError: If the API request fails
     """
     logger.info(f"Deleting DBFS path: {dbfs_path}")
-    return make_api_request(
+    return await make_api_request(
         "POST",
         "/api/2.0/dbfs/delete",
         data={
@@ -233,7 +233,7 @@ async def get_status(dbfs_path: str) -> Dict[str, Any]:
         DatabricksAPIError: If the API request fails
     """
     logger.info(f"Getting status of DBFS path: {dbfs_path}")
-    return make_api_request("GET", "/api/2.0/dbfs/get-status", params={"path": dbfs_path})
+    return await make_api_request("GET", "/api/2.0/dbfs/get-status", params={"path": dbfs_path})
 
 
 async def create_directory(dbfs_path: str) -> Dict[str, Any]:
@@ -250,4 +250,4 @@ async def create_directory(dbfs_path: str) -> Dict[str, Any]:
         DatabricksAPIError: If the API request fails
     """
     logger.info(f"Creating DBFS directory: {dbfs_path}")
-    return make_api_request("POST", "/api/2.0/dbfs/mkdirs", data={"path": dbfs_path}) 
+    return await make_api_request("POST", "/api/2.0/dbfs/mkdirs", data={"path": dbfs_path})
