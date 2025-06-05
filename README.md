@@ -18,7 +18,7 @@ we're building the tools that power the next generation of AI-driven application
 
 A Model Completion Protocol (MCP) server for Databricks that provides access to Databricks functionality via the MCP protocol. This allows LLM-powered tools to interact with Databricks clusters, jobs, notebooks, and more.
 
-> **Version 0.2.1** - Latest release with improved package structure and organization.
+> **Version 0.3.0** - Latest release with repo sync and notebook execution capabilities.
 
 ## 🚀 One-Click Install
 
@@ -104,20 +104,20 @@ The Databricks MCP Server exposes the following tools:
 ### SQL Execution
 - **execute_sql**: Execute a SQL statement (warehouse_id optional if DATABRICKS_WAREHOUSE_ID env var is set)
 
-## 🎉 Recent Updates (v0.2.1)
+## 🎉 Recent Updates (v0.3.0)
 
-**Latest Improvements:**
-- ✅ **Enhanced Codespaces support**: Fixed setup scripts and environment variables for better GitHub Codespaces integration
-- ✅ **Documentation improvements**: Resolved YAML parsing issues and enhanced README formatting
-- ✅ **Publishing improvements**: Added PyPI configuration and streamlined package publishing process
+**New Features - Repo Sync & Notebook Execution:**
+- ✅ **Repository Management**: Pull latest commits from Databricks repos with `pull_repo` tool
+- ✅ **One-time Notebook Execution**: Submit and wait for notebook runs with `run_notebook` tool  
+- ✅ **Composite Operations**: Combined repo sync + notebook execution with `sync_repo_and_run_notebook` tool
+- ✅ **Enhanced Job Management**: Extended job APIs with submit, status checking, and run management
+- ✅ **Comprehensive Testing**: Full test coverage for all new functionality
 
-**Previous Major Update (v0.2.0) - Package Refactoring:**
-- ✅ **Cleaner imports**: Package renamed from `src` to `databricks_mcp` for better clarity
-- ✅ **Organized structure**: Documentation and scripts moved to dedicated directories
-- ✅ **Simplified root**: Cleaner project root with better organization
-- ✅ **Same functionality**: All features work exactly the same, just with better structure
+**Previous Updates:**
+- **v0.2.1**: Enhanced Codespaces support, documentation improvements, publishing process streamlining
+- **v0.2.0**: Major package refactoring from `src/` to `databricks_mcp/` structure
 
-**Backwards Compatibility:** All MCP tools and functionality remain unchanged. Only the internal package structure has been improved.
+**Backwards Compatibility:** All existing MCP tools continue to work unchanged. New features extend functionality without breaking changes.
 
 ## Installation
 
