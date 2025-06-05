@@ -8,7 +8,9 @@
 *Markov specializes in cutting-edge AI solutions and automation. From neural ledgers to MCP servers,  
 we're building the tools that power the next generation of AI-driven applications.*
 
-**[🌐 Visit markov.bot](https://markov.bot) • [✉️ Get in Touch](mailto:olivier@markov.bot)**
+💼 **We're always hiring exceptional engineers!** Join us in shaping the future of AI.
+
+**[🌐 Visit markov.bot](https://markov.bot) • [✉️ Get in Touch](mailto:olivier@markov.bot) • [🚀 Careers](mailto:olivier@markov.bot?subject=Engineering%20Career%20Opportunity)**
 
 </div>
 
