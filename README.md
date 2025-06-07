@@ -18,7 +18,7 @@ we're building the tools that power the next generation of AI-driven application
 
 A Model Completion Protocol (MCP) server for Databricks that provides access to Databricks functionality via the MCP protocol. This allows LLM-powered tools to interact with Databricks clusters, jobs, notebooks, and more.
 
-> **Version 0.3.0** - Latest release with repo sync and notebook execution capabilities.
+> **Version 0.3.1** - Latest release with issue #9 fix and enhanced MCP client compatibility.
 
 ## 🚀 One-Click Install
 
@@ -112,6 +112,11 @@ The Databricks MCP Server exposes the following tools:
 - ✅ **Composite Operations**: Combined repo sync + notebook execution with `sync_repo_and_run_notebook` tool
 - ✅ **Enhanced Job Management**: Extended job APIs with submit, status checking, and run management
 - ✅ **Comprehensive Testing**: Full test coverage for all new functionality
+
+**Bug Fixes:**
+- ✅ **Issue #9 Fixed**: Resolved "Missing required parameter 'params'" error in Cursor and other MCP clients
+- ✅ **Parameter Handling**: All MCP tools now correctly handle both nested and flat parameter structures
+- ✅ **Cursor Compatibility**: Full compatibility with Cursor's MCP implementation
 
 **Previous Updates:**
 - **v0.2.1**: Enhanced Codespaces support, documentation improvements, publishing process streamlining
