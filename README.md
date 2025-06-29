@@ -4,7 +4,21 @@
 **When AI changes everything, you start from scratch.**
 
 *Markov specializes in cutting-edge AI solutions and automation. From neural ledgers to MCP servers,  
-we're building the tools that power the next generation of AI-driven applications.*
+we're building the tools that power the nex### Running the MCP Server
+
+#### Standalone (Non-Docker)
+
+To start the MCP server directly for testing or development, run:
+
+```bash
+# Activate your virtual environment if not already active
+source .venv/bin/activate 
+
+# Run the start script (handles finding env vars from .env if needed)
+./scripts/start_mcp_server.sh
+```
+
+This is useful for seeing direct output and logs during development. AI-driven applications.*
 
 💼 **We're always hiring exceptional engineers!** Join us in shaping the future of AI.
 
@@ -138,6 +152,23 @@ This will automatically install the MCP server using `uvx` and configure it in C
 - `DATABRICKS_TOKEN` - Your Databricks personal access token  
 - `DATABRICKS_WAREHOUSE_ID` - (Optional) Your default SQL warehouse ID
 
+### Docker Installation (Recommended)
+
+The MCP server can be easily containerized and run using Docker, which provides consistent operation across different environments and simplifies setup across platforms.
+
+1. Build the Docker image:
+   ```bash
+   docker build --no-cache -t databricks-mcp-server .
+   ```
+
+2. You can run the container directly for testing:
+   ```bash
+   docker run --rm -e DATABRICKS_HOST=https://your-workspace.azuredatabricks.net \
+     -e DATABRICKS_TOKEN=your-token \
+     -e DATABRICKS_WAREHOUSE_ID=your-warehouse-id \
+     -i databricks-mcp-server
+   ```
+
 ### Manual Installation
 
 #### Prerequisites
@@ -233,55 +264,183 @@ This is useful for seeing direct output and logs.
 
 ### Integrating with AI Clients
 
-To use this server with AI clients like Cursor or Claude CLI, you need to register it.
+To use this server with AI clients like VS Code, Cursor, or Claude CLI, you need to register it. Below are setup instructions for both Docker-based and traditional methods.
 
-#### Cursor Setup
+## Docker-Based Integration (Recommended)
 
-1.  Open your global MCP configuration file located at `~/.cursor/mcp.json` (create it if it doesn't exist).
-2.  Add the following entry within the `mcpServers` object, replacing placeholders with your actual values and ensuring the path to `start_mcp_server.sh` is correct:
+The Docker-based approach offers the simplest setup with the fewest environment conflicts.
 
-    ```json
-    {
-      "mcpServers": {
-        // ... other servers ...
-        "databricks-mcp-local": { 
-          "command": "/absolute/path/to/your/project/databricks-mcp-server/start_mcp_server.sh",
-          "args": [],
-          "env": {
-            "DATABRICKS_HOST": "https://your-databricks-instance.azuredatabricks.net", 
-            "DATABRICKS_TOKEN": "dapiXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
-            "DATABRICKS_WAREHOUSE_ID": "sql_warehouse_12345",
-            "RUNNING_VIA_CURSOR_MCP": "true" 
-          }
-        }
-        // ... other servers ...
-      }
-    }
-    ```
+### VS Code with Docker
 
-3.  **Important:** Replace `/absolute/path/to/your/project/databricks-mcp-server/` with the actual absolute path to this project directory on your machine.
-4.  Replace the `DATABRICKS_HOST` and `DATABRICKS_TOKEN` values with your credentials.
-5.  Save the file and **restart Cursor**.
+1. First, build the Docker image:
+   ```bash
+   docker build --no-cache -t databricks-mcp-server .
+   ```
 
-6.  You can now invoke tools using `databricks-mcp-local:<tool_name>` (e.g., `databricks-mcp-local:list_jobs`).
+2. Create a `.vscode/mcp.json` file in your project root:
+   ```json
+   {
+     "servers": {
+       "databricks-mcp-docker": {
+         "command": "docker",
+         "args": [
+           "run", 
+           "--rm",
+           "-e",
+           "DATABRICKS_HOST",
+           "-e",
+           "DATABRICKS_TOKEN",
+           "-e",
+           "DATABRICKS_WAREHOUSE_ID", 
+           "-i",
+           "databricks-mcp-server"
+         ],
+         "env": {
+           "DATABRICKS_HOST": "${input:databricks_host}",
+           "DATABRICKS_TOKEN": "${input:databricks_token}",
+           "DATABRICKS_WAREHOUSE_ID": "${input:databricks_warehouse_id}",
+           "LOG_LEVEL": "DEBUG"
+         }
+       }
+     },
+     "inputs": [
+       {
+         "id": "databricks_host",
+         "type": "promptString",
+         "description": "Your Databricks workspace URL"
+       },
+       {
+         "id": "databricks_token",
+         "type": "promptString",
+         "description": "Your Databricks personal access token",
+         "password": true
+       },
+       {
+         "id": "databricks_warehouse_id",
+         "type": "promptString",
+         "description": "(Optional) Default SQL warehouse ID"
+       }
+     ]
+   }
+   ```
 
-#### Claude CLI Setup
+3. VS Code will prompt for credentials when needed and pass them to the Docker container.
 
-1.  Use the `claude mcp add` command to register the server. Provide your credentials using the `-e` flag for environment variables and point the command to the `start_mcp_server.sh` script using `--` followed by the absolute path:
+### Claude CLI with Docker
 
-    ```bash
-    claude mcp add databricks-mcp-local \
-      -s user \
-      -e DATABRICKS_HOST="https://your-databricks-instance.azuredatabricks.net" \
-      -e DATABRICKS_TOKEN="dapiXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX" \
-      -e DATABRICKS_WAREHOUSE_ID="sql_warehouse_12345" \
-      -- /absolute/path/to/your/project/databricks-mcp-server/start_mcp_server.sh
-    ```
+1. Build the Docker image (if not done already):
+   ```bash
+   docker build --no-cache -t databricks-mcp-server .
+   ```
 
-2.  **Important:** Replace `/absolute/path/to/your/project/databricks-mcp-server/` with the actual absolute path to this project directory on your machine.
-3.  Replace the `DATABRICKS_HOST` and `DATABRICKS_TOKEN` values with your credentials.
+2. Register the Docker-based MCP server with Claude:
+   ```bash
+   claude mcp add databricks-mcp-docker \
+     -s user \
+     -e DATABRICKS_HOST="https://your-databricks-instance.azuredatabricks.net" \
+     -e DATABRICKS_TOKEN="dapiXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX" \
+     -e DATABRICKS_WAREHOUSE_ID="sql_warehouse_12345" \
+     -- docker run --rm -e DATABRICKS_HOST -e DATABRICKS_TOKEN -e DATABRICKS_WAREHOUSE_ID -i databricks-mcp-server
+   ```
 
-4.  You can now invoke tools using `databricks-mcp-local:<tool_name>` in your Claude interactions.
+3. Replace the placeholder values with your actual Databricks credentials.
+
+4. You can now invoke tools using `databricks-mcp-docker:<tool_name>` in your Claude interactions.
+
+## Non-Docker Integration
+
+If you prefer to run without Docker, these setup methods use a local Python environment.
+
+### VS Code without Docker
+
+1. Ensure you've completed the manual installation steps and activated your virtual environment.
+
+2. Create a `.vscode/mcp.json` file in your project root:
+   ```json
+   {
+     "servers": {
+       "databricks-mcp-local": {
+         "command": "${workspaceFolder}/scripts/start_mcp_server.sh",
+         "args": [],
+         "env": {
+           "DATABRICKS_HOST": "${input:databricks_host}",
+           "DATABRICKS_TOKEN": "${input:databricks_token}",
+           "DATABRICKS_WAREHOUSE_ID": "${input:databricks_warehouse_id}",
+           "LOG_LEVEL": "DEBUG"
+         }
+       }
+     },
+     "inputs": [
+       {
+         "id": "databricks_host",
+         "type": "promptString",
+         "description": "Your Databricks workspace URL"
+       },
+       {
+         "id": "databricks_token",
+         "type": "promptString",
+         "description": "Your Databricks personal access token",
+         "password": true
+       },
+       {
+         "id": "databricks_warehouse_id",
+         "type": "promptString",
+         "description": "(Optional) Default SQL warehouse ID"
+       }
+     ]
+   }
+   ```
+
+3. Ensure the start script has execute permissions:
+   ```bash
+   chmod +x ./scripts/start_mcp_server.sh
+   ```
+
+### Cursor Setup
+
+1. Open your global MCP configuration file located at `~/.cursor/mcp.json` (create it if it doesn't exist).
+2. Add the following entry within the `mcpServers` object:
+
+   ```json
+   {
+     "mcpServers": {
+       // ... other servers ...
+       "databricks-mcp-local": { 
+         "command": "/absolute/path/to/your/project/databricks-mcp-server/start_mcp_server.sh",
+         "args": [],
+         "env": {
+           "DATABRICKS_HOST": "https://your-databricks-instance.azuredatabricks.net", 
+           "DATABRICKS_TOKEN": "dapiXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
+           "DATABRICKS_WAREHOUSE_ID": "sql_warehouse_12345",
+           "RUNNING_VIA_CURSOR_MCP": "true" 
+         }
+       }
+       // ... other servers ...
+     }
+   }
+   ```
+
+3. **Important:** Replace `/absolute/path/to/your/project/databricks-mcp-server/` with the actual absolute path to this project directory on your machine.
+4. Replace the credentials with your actual values.
+5. Save the file and restart Cursor.
+6. You can now invoke tools using `databricks-mcp-local:<tool_name>` (e.g., `databricks-mcp-local:list_jobs`).
+
+### Claude CLI without Docker
+
+1. Use the `claude mcp add` command to register the server:
+
+   ```bash
+   claude mcp add databricks-mcp-local \
+     -s user \
+     -e DATABRICKS_HOST="https://your-databricks-instance.azuredatabricks.net" \
+     -e DATABRICKS_TOKEN="dapiXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX" \
+     -e DATABRICKS_WAREHOUSE_ID="sql_warehouse_12345" \
+     -- /absolute/path/to/your/project/databricks-mcp-server/start_mcp_server.sh
+   ```
+
+2. **Important:** Replace `/absolute/path/to/your/project/databricks-mcp-server/` with the actual absolute path to this project directory on your machine.
+3. Replace the credentials with your actual values.
+4. You can now invoke tools using `databricks-mcp-local:<tool_name>` in your Claude interactions.
 
 ## Querying Databricks Resources
 
@@ -392,6 +551,9 @@ databricks-mcp/
 │   ├── show_notebooks.py            # Script to show notebooks
 │   ├── setup_codespaces.sh          # Codespaces setup
 │   └── test_setup_local.sh          # Local test setup
+├── .vscode/                         # VS Code configuration
+│   └── mcp.json                     # MCP server configuration for VS Code
+├── Dockerfile                       # Docker configuration for containerization
 ├── examples/                        # Example usage
 │   ├── direct_usage.py              # Direct usage examples
 │   └── mcp_client_usage.py          # MCP client examples
