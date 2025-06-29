@@ -1,0 +1,43 @@
+{
+  "servers": {
+    "databricks-mcp-docker": {
+      "command": "docker",
+      "args": [
+        "run", 
+        "--rm",
+        "-e",
+        "DATABRICKS_HOST",
+        "-e",
+        "DATABRICKS_TOKEN",
+        "-e",
+        "DATABRICKS_WAREHOUSE_ID", 
+        "-i",
+        "databricks-mcp-server"
+      ],
+      "env": {
+        "DATABRICKS_HOST": "${input:databricks_host}",
+        "DATABRICKS_TOKEN": "${input:databricks_token}",
+        "DATABRICKS_WAREHOUSE_ID": "${input:databricks_warehouse_id}",
+        "LOG_LEVEL": "DEBUG"
+      }
+    }
+  },
+  "inputs": [
+    {
+      "id": "databricks_host",
+      "type": "promptString",
+      "description": "Your Databricks workspace URL"
+    },
+    {
+      "id": "databricks_token",
+      "type": "promptString",
+      "description": "Your Databricks personal access token",
+      "password": true
+    },
+    {
+      "id": "databricks_warehouse_id",
+      "type": "promptString",
+      "description": "(Optional) Default SQL warehouse ID"
+    }
+  ]
+}
