@@ -22,6 +22,7 @@ build/
 # IDE settings
 .idea/
 .vscode/
+!.vscode/mcp.json
 *.swp
 *.swo
 
