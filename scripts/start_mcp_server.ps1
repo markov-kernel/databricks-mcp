@@ -6,14 +6,14 @@ param(
 )
 
 # Check if the virtual environment exists
-if (-not (Test-Path -Path ".venv")) {
+if (-not (Test-Path -Path "$PSScriptRoot\..\.venv")) {
     Write-Host "Virtual environment not found. Please create it first:"
     Write-Host "uv venv"
     exit 1
 }
 
 # Activate virtual environment
-. .\.venv\Scripts\Activate.ps1
+. "$PSScriptRoot\..\.venv\Scripts\Activate.ps1"
 
 # Check if environment variables are set
 if (-not (Get-Item -Path Env:DATABRICKS_HOST -ErrorAction SilentlyContinue) -or 
