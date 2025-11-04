@@ -1,382 +1,188 @@
-<div align="center">
-
-### 🤖 **Built by [Markov](https://markov.bot)** 
-**When AI changes everything, you start from scratch.**
-
-*Markov specializes in cutting-edge AI solutions and automation. From neural ledgers to MCP servers,  
-we're building the tools that power the next generation of AI-driven applications.*
-
-💼 **We're always hiring exceptional engineers!** Join us in shaping the future of AI.
-
-**[🌐 Visit markov.bot](https://markov.bot) • [✉️ Get in Touch](mailto:olivier@markov.bot) • [🚀 Careers](mailto:olivier@markov.bot?subject=Engineering%20Career%20Opportunity)**
-
-</div>
-
-<br>
-
 # Databricks MCP Server
 
-A Model Completion Protocol (MCP) server for Databricks that provides access to Databricks functionality via the MCP protocol. This allows LLM-powered tools to interact with Databricks clusters, jobs, notebooks, and more.
+A production-ready Model Completion Protocol (MCP) server that exposes Databricks REST capabilities to MCP-compatible agents and tooling. Version **0.4.0** introduces structured responses, resource caching, retry-aware networking, and end-to-end resilience improvements.
 
-> **Version 0.4.0** - Structured MCP responses, resource caching, and resilience upgrades.
+---
 
-## 🚀 One-Click Install
+## Table of Contents
+1. [Key Capabilities](#key-capabilities)
+2. [Architecture Highlights](#architecture-highlights)
+3. [Installation](#installation)
+4. [Configuration](#configuration)
+5. [Running the Server](#running-the-server)
+6. [Integrating with MCP Clients](#integrating-with-mcp-clients)
+7. [Working with Tool Responses](#working-with-tool-responses)
+8. [Available Tools](#available-tools)
+9. [Development Workflow](#development-workflow)
+10. [Testing](#testing)
+11. [Publishing Builds](#publishing-builds)
+12. [Support & Contact](#support--contact)
+13. [License](#license)
 
-### For Cursor Users
-**Click this link to install instantly:**
-```
-cursor://anysphere.cursor-deeplink/mcp/install?name=databricks-mcp&config=eyJjb21tYW5kIjoidXZ4IiwiYXJncyI6WyJkYXRhYnJpY2tzLW1jcC1zZXJ2ZXIiXSwiZW52Ijp7IkRBVEFCUklDS1NfSE9TVCI6IiR7REFUQUJSSUNLU19IT1NUfSIsIkRBVEFCUklDS1NfVE9LRU4iOiIke0RBVEFCUklDS1NfVE9LRU59IiwiREFUQUJSSUNLU19XQVJFSE9VU0VfSUQiOiIke0RBVEFCUklDS1NfV0FSRUhPVVNFX0lEfSJ9fQ==
-```
+---
 
-**Or copy and paste this deeplink:**
-`cursor://anysphere.cursor-deeplink/mcp/install?name=databricks-mcp&config=eyJjb21tYW5kIjoidXZ4IiwiYXJncyI6WyJkYXRhYnJpY2tzLW1jcC1zZXJ2ZXIiXSwiZW52Ijp7IkRBVEFCUklDS1NfSE9TVCI6IiR7REFUQUJSSUNLU19IT1NUfSIsIkRBVEFCUklDS1NfVE9LRU4iOiIke0RBVEFCUklDS1NfVE9LRU59IiwiREFUQUJSSUNLU19XQVJFSE9VU0VfSUQiOiIke0RBVEFCUklDS1NfV0FSRUhPVVNFX0lEfSJ9fQ==`
+## Key Capabilities
+- **Structured MCP Responses** – Each tool returns a `CallToolResult` with human-readable summaries in `content` and machine-readable payloads in `_meta['data']`.
+- **Resource Caching** – Large notebook/workspace exports are cached once and exposed as `resource://databricks/exports/{id}` entries under `_meta['resources']`.
+- **Progress & Metrics** – Long-running actions stream MCP progress notifications and track per-tool success/error/timeout/cancel metrics.
+- **Resilient Networking** – Shared HTTP client injects request IDs, enforces timeouts, and retries retryable Databricks responses (408/429/5xx) with exponential backoff.
+- **Async Runtime** – Built on `mcp.server.FastMCP` with centralized JSON logging and concurrency guards for predictable stdio behaviour.
 
-**[→ Install Databricks MCP in Cursor ←](cursor://anysphere.cursor-deeplink/mcp/install?name=databricks-mcp&config=eyJjb21tYW5kIjoidXZ4IiwiYXJncyI6WyJkYXRhYnJpY2tzLW1jcC1zZXJ2ZXIiXSwiZW52Ijp7IkRBVEFCUklDS1NfSE9TVCI6IiR7REFUQUJSSUNLU19IT1NUfSIsIkRBVEFCUklDS1NfVE9LRU4iOiIke0RBVEFCUklDS1NfVE9LRU59IiwiREFUQUJSSUNLU19XQVJFSE9VU0VfSUQiOiIke0RBVEFCUklDS1NfV0FSRUhPVVNFX0lEfSJ9fQ==)**
+## Architecture Highlights
+- `databricks_mcp/server/databricks_mcp_server.py` – FastMCP server with tool registration, progress handling, metrics, and resource caching.
+- `databricks_mcp/core/utils.py` – HTTP utilities with correlation IDs, retries, and error mapping to `DatabricksAPIError`.
+- `databricks_mcp/core/logging_utils.py` – JSON logging configuration for stderr/file outputs.
+- `databricks_mcp/core/models.py` – Pydantic models (e.g., `ClusterConfig`) used by tool schemas.
+- Tests under `tests/` mock Databricks APIs to validate orchestration, structured responses, and schema metadata without shell scripts.
 
-This project is maintained by Olivier Debeuf De Rijcker <olivier@markov.bot>.
-
-Credit for the initial version goes to [@JustTryAI](https://github.com/JustTryAI/databricks-mcp-server).
-
-## Features
-
-- **Structured MCP Responses**: Tools return `CallToolResult` objects with summaries in `content` and full payloads in `_meta['data']`.
-- **Resource Caching**: Large exports (workspace files, notebooks) are stored once and exposed as `resource://databricks/exports/{id}` URIs under `_meta['resources']`.
-- **Progress & Metrics**: Long-running tools stream MCP progress notifications and track per-tool success/error counters.
-- **Resilient Networking**: Shared HTTP client adds request IDs, timeout controls, and exponential backoff for retryable Databricks errors.
-- **Async MCP Runtime**: Built atop `mcp.server.FastMCP` for stdio transport with centralized JSON logging.
-
-## Available Tools
-
-The Databricks MCP Server exposes the following tools:
-
-### Cluster Management
-- **list_clusters**: List all Databricks clusters
-- **create_cluster**: Create a new Databricks cluster
-- **terminate_cluster**: Terminate a Databricks cluster
-- **get_cluster**: Get information about a specific Databricks cluster
-- **start_cluster**: Start a terminated Databricks cluster
-
-### Job Management
-- **list_jobs**: List all Databricks jobs
-- **run_job**: Run a Databricks job
-- **run_notebook**: Submit and wait for a one-time notebook run
-- **create_job**: Create a new Databricks job
-- **delete_job**: Delete a Databricks job
-- **get_run_status**: Get status information for a job run
-- **list_job_runs**: List recent runs for a job
-- **cancel_run**: Cancel a running job
-
-### Workspace Files
-- **list_notebooks**: List notebooks in a workspace directory
-- **export_notebook**: Export a notebook from the workspace
-- **import_notebook**: Import a notebook into the workspace
-- **delete_workspace_object**: Delete a notebook or directory
-- **get_workspace_file_content**: Retrieve content of any workspace file (JSON, notebooks, scripts, etc.)
-- **get_workspace_file_info**: Get metadata about workspace files
-
-### File System
-- **list_files**: List files and directories in a DBFS path
-- **dbfs_put**: Upload a small file to DBFS
-- **dbfs_delete**: Delete a DBFS file or directory
-
-### Cluster Libraries
-- **install_library**: Install libraries on a cluster
-- **uninstall_library**: Remove libraries from a cluster
-- **list_cluster_libraries**: Check installed libraries on a cluster
-
-### Repos
-- **create_repo**: Clone a Git repository
-- **update_repo**: Update an existing repo
-- **list_repos**: List repos in the workspace
-- **pull_repo**: Pull the latest commit for a Databricks repo
-
-### Unity Catalog
-- **list_catalogs**: List catalogs
-- **create_catalog**: Create a catalog
-- **list_schemas**: List schemas in a catalog
-- **create_schema**: Create a schema
-- **list_tables**: List tables in a schema
-- **create_table**: Execute a CREATE TABLE statement
-- **get_table_lineage**: Fetch lineage information for a table
-
-### Composite
-- **sync_repo_and_run_notebook**: Pull a repo and execute a notebook in one call
-
-### SQL Execution
-- **execute_sql**: Execute a SQL statement (optional `warehouse_id`, `catalog`, `schema_name`)
-
-## 🎉 Recent Updates
-
-**Structured Output Refresh (current)**
-- ✅ **Typed MCP Schemas**: Tools expose precise input schemas using FastMCP's metadata (no `{ "params": ... }` envelope).
-- ✅ **Structured Results**: Each tool now returns `CallToolResult` with a concise text summary and the full Databricks payload in `_meta['data']`.
-- ✅ **Resource URIs for Large Payloads**: Notebook/workspace exports stash `resource://databricks/exports/{id}` entries in `_meta['resources']` instead of embedding large blobs.
-- ✅ **Resilience Improvements**: Per-tool concurrency limits, timeouts, and retry-with-backoff for transient Databricks errors.
-- ✅ **Progress & Telemetry**: Tools publish MCP progress notifications and surface `_meta._request_id` plus per-tool success/error counters for easier observability.
-- ✅ **Correlation IDs**: All API requests and tool responses carry `_meta._request_id` for traceability.
-
-**v0.3.0 Highlights**
-- ✅ **Repository Management**: Pull latest commits from Databricks repos with `pull_repo`.
-- ✅ **One-time Notebook Execution**: Submit and wait for notebook runs with `run_notebook`.
-- ✅ **Composite Operations**: Combined repo sync + notebook execution with `sync_repo_and_run_notebook`.
-- ✅ **Enhanced Job Management**: Extended job APIs with submit, status checking, and run management.
-
-**Previous Updates:**
-- **v0.2.1**: Enhanced Codespaces support, documentation improvements, publishing process streamlining
-- **v0.2.0**: Major package refactoring from `src/` to `databricks_mcp/` structure
-
-**Backwards Compatibility:** Breaking change alert — tools now require flat arguments and emit structured responses; update custom clients accordingly.
+For an in-depth tour of data flow and design decisions, see [ARCHITECTURE.md](ARCHITECTURE.md).
 
 ## Installation
 
-### Quick Install (Recommended)
+### Prerequisites
+- Python 3.10+
+- [`uv`](https://github.com/astral-sh/uv) for dependency management and publishing
 
-Use the link above to install with one click:
+### Quick Install (recommended)
+Register the server with Cursor using the deeplink below – it resolves to `uvx databricks-mcp-server@latest` and picks up future updates automatically.
 
-**[→ Install Databricks MCP in Cursor ←](cursor://anysphere.cursor-deeplink/mcp/install?name=databricks-mcp&config=eyJjb21tYW5kIjoidXZ4IiwiYXJncyI6WyJkYXRhYnJpY2tzLW1jcC1zZXJ2ZXIiXSwiZW52Ijp7IkRBVEFCUklDS1NfSE9TVCI6IiR7REFUQUJSSUNLU19IT1NUfSIsIkRBVEFCUklDS1NfVE9LRU4iOiIke0RBVEFCUklDS1NfVE9LRU59IiwiREFUQUJSSUNLU19XQVJFSE9VU0VfSUQiOiIke0RBVEFCUklDS1NfV0FSRUhPVVNFX0lEfSJ9fQ==)**
-
-This will automatically install the MCP server using `uvx` and configure it in Cursor. You'll need to set these environment variables:
-
-- `DATABRICKS_HOST` - Your Databricks workspace URL
-- `DATABRICKS_TOKEN` - Your Databricks personal access token  
-- `DATABRICKS_WAREHOUSE_ID` - (Optional) Your default SQL warehouse ID
+```text
+cursor://anysphere.cursor-deeplink/mcp/install?name=databricks-mcp&config=eyJjb21tYW5kIjoidXZ4IiwiYXJncyI6WyJkYXRhYnJpY2tzLW1jcC1zZXJ2ZXIiXSwiZW52Ijp7IkRBVEFCUklDS1NfSE9TVCI6IiR7REFUQUJSSUNLU19IT1NUfSIsIkRBVEFCUklDS1NfVE9LRU4iOiIke0RBVEFCUklDS1NfVE9LRU59IiwiREFUQUJSSUNLU19XQVJFSE9VU0VfSUQiOiIke0RBVEFCUklDS1NfV0FSRUhPVVNFX0lEfSJ9fQ==
+```
 
 ### Manual Installation
+```bash
+# Clone and enter the repository
+git clone https://github.com/markov-kernel/databricks-mcp.git
+cd databricks-mcp
 
-#### Prerequisites
+# Create an isolated environment (optional but recommended)
+uv venv
+source .venv/bin/activate  # Linux/Mac
+# .\.venv\Scriptsctivate  # Windows PowerShell
 
-- Python 3.10 or higher
-- `uv` package manager (recommended for MCP servers)
+# Install package and development dependencies
+uv pip install -e .
+uv pip install -e ".[dev]"
+```
 
-### Setup
+## Configuration
+Set the following environment variables (or populate `.env` from `.env.example`).
 
-1. Install `uv` if you don't have it already:
+```bash
+export DATABRICKS_HOST="https://your-workspace.databricks.com"
+export DATABRICKS_TOKEN="dapiXXXXXXXXXXXXXXXX"
+export DATABRICKS_WAREHOUSE_ID="sql_warehouse_12345"  # optional default
+export TOOL_TIMEOUT_SECONDS=300
+export MAX_CONCURRENT_REQUESTS=8
+export HTTP_TIMEOUT_SECONDS=60
+export API_MAX_RETRIES=3
+export API_RETRY_BACKOFF_SECONDS=0.5
+```
 
-   ```bash
-   # MacOS/Linux
-   curl -LsSf https://astral.sh/uv/install.sh | sh
-   
-   # Windows (in PowerShell)
-   irm https://astral.sh/uv/install.ps1 | iex
-   ```
-
-   Restart your terminal after installation.
-
-2. Clone the repository:
-   ```bash
-   git clone https://github.com/markov-kernel/databricks-mcp.git
-   cd databricks-mcp
-   ```
-
-3. Create a virtual environment (optional) and install dependencies for local development:
-   ```bash
-   # Create and activate virtual environment
-   uv venv
-   
-   # On Windows
-   .\.venv\Scripts\activate
-   
-   # On Linux/Mac
-   source .venv/bin/activate
-   
-   # Install dependencies in development mode
-   uv pip install -e .
-   
-   # Install development dependencies
-   uv pip install -e ".[dev]"
-   ```
-
-4. Set up environment variables:
-   ```bash
-   # Required variables
-   # Windows
-   set DATABRICKS_HOST=https://your-databricks-instance.azuredatabricks.net
-   set DATABRICKS_TOKEN=your-personal-access-token
-   
-   # Linux/Mac
-   export DATABRICKS_HOST=https://your-databricks-instance.azuredatabricks.net
-   export DATABRICKS_TOKEN=your-personal-access-token
-   
-   # Optional: Set default SQL warehouse (makes warehouse_id optional in execute_sql)
-   export DATABRICKS_WAREHOUSE_ID=sql_warehouse_12345
-   ```
-
-   You can also create an `.env` file based on the `.env.example` template.
-
-## Running the MCP Server
-
-### Standalone
-
-To start the MCP server directly for testing or development, run:
-
+## Running the Server
 ```bash
 uvx databricks-mcp-server@latest
 ```
+> Tip: append `--refresh` (e.g., `uvx databricks-mcp-server@latest --refresh`) to force `uv` to resolve the latest PyPI release after publishing.
 
-> Tip: add `--refresh` (for example `uvx databricks-mcp-server@latest --refresh`) to force-install the newest release after publishing.
-
-Pass `--log-level DEBUG` or other options using standard CLI flags:
-
+To adjust logging:
 ```bash
 uvx databricks-mcp-server@latest -- --log-level DEBUG
 ```
 
-### Integrating with AI Clients
+## Integrating with MCP Clients
 
-To use this server with AI clients like Cursor or Claude CLI, you need to register it.
-
-#### Cursor Setup
-
-1.  Open your global MCP configuration file located at `~/.cursor/mcp.json` (create it if it doesn't exist).
-2.  Add the following entry within the `mcpServers` object, replacing placeholders with your actual values:
-
-    ```json
-    {
-      "mcpServers": {
-        // ... other servers ...
-        "databricks-mcp-local": { 
-          "command": "uvx",
-          "args": ["databricks-mcp-server@latest"],
-          "env": {
-            "DATABRICKS_HOST": "https://your-databricks-instance.azuredatabricks.net", 
-            "DATABRICKS_TOKEN": "dapiXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
-            "DATABRICKS_WAREHOUSE_ID": "sql_warehouse_12345",
-            "RUNNING_VIA_CURSOR_MCP": "true" 
-          }
-        }
-        // ... other servers ...
+### Cursor
+```jsonc
+{
+  "mcpServers": {
+    "databricks-mcp-local": {
+      "command": "uvx",
+      "args": ["databricks-mcp-server@latest"],
+      "env": {
+        "DATABRICKS_HOST": "https://your-workspace.databricks.com",
+        "DATABRICKS_TOKEN": "dapiXXXXXXXXXXXXXXXX",
+        "DATABRICKS_WAREHOUSE_ID": "sql_warehouse_12345",
+        "RUNNING_VIA_CURSOR_MCP": "true"
       }
     }
-    ```
+  }
+}
+```
+Restart Cursor after saving. Invoke tools as `databricks-mcp-local:<tool>`.
 
-3.  Replace the `DATABRICKS_HOST` and `DATABRICKS_TOKEN` values with your credentials, then **restart Cursor**.
-4.  You can now invoke tools using `databricks-mcp-local:<tool_name>` (e.g., `databricks-mcp-local:list_jobs`).
-
-#### Claude CLI Setup
-
-1.  Use the `claude mcp add` command to register the server. Provide your credentials using the `-e` flag for environment variables and point the command to `uvx databricks-mcp-server@latest`:
-
-    ```bash
-    claude mcp add databricks-mcp-local \
-      -s user \
-      -e DATABRICKS_HOST="https://your-databricks-instance.azuredatabricks.net" \
-      -e DATABRICKS_TOKEN="dapiXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX" \
-      -e DATABRICKS_WAREHOUSE_ID="sql_warehouse_12345" \
-      -- uvx databricks-mcp-server@latest
-    ```
-
-2.  Replace the `DATABRICKS_HOST` and `DATABRICKS_TOKEN` values with your credentials.
-3.  You can now invoke tools using `databricks-mcp-local:<tool_name>` in your Claude interactions.
-
-## Usage Examples
-
-### SQL Execution with Default Warehouse
-```python
-result = await session.call_tool("execute_sql", {
-    "statement": "SELECT * FROM my_table LIMIT 10"
-})
-
-print(result.content[0].text)  # Human summary from the server
-rows = (result.meta or {}).get("data", {}).get("result", [])
-print(rows)
-
-# Override the default warehouse if needed
-await session.call_tool("execute_sql", {
-    "statement": "SELECT * FROM my_table LIMIT 10",
-    "warehouse_id": "sql_warehouse_specific"
-})
+### Claude CLI
+```bash
+claude mcp add databricks-mcp-local   -s user   -e DATABRICKS_HOST="https://your-workspace.databricks.com"   -e DATABRICKS_TOKEN="dapiXXXXXXXXXXXXXXXX"   -e DATABRICKS_WAREHOUSE_ID="sql_warehouse_12345"   -- uvx databricks-mcp-server@latest
 ```
 
-### Workspace File Content Retrieval
-```python
-# Get JSON file content from workspace (resource cached server-side)
-result = await session.call_tool("get_workspace_file_content", {
-    "path": "/Users/user@domain.com/config/settings.json"
-})
+## Working with Tool Responses
+Structured payloads live in `_meta['data']`; large resources are referenced in `_meta['resources']`.
 
+```python
+result = await session.call_tool("list_clusters", {})
+summary = next((block.text for block in result.content if getattr(block, "type", "") == "text"), "")
+clusters = (result.meta or {}).get("data", {}).get("clusters", [])
+resources = (result.meta or {}).get("resources", [])
+```
+
+### Example – SQL Query
+```python
+result = await session.call_tool("execute_sql", {"statement": "SELECT * FROM samples LIMIT 10"})
+print(result.content[0].text)
+rows = (result.meta or {}).get("data", {}).get("result", [])
+```
+
+### Example – Workspace File Export
+```python
+result = await session.call_tool("get_workspace_file_content", {
+    "path": "/Users/user@domain.com/report.ipynb",
+    "format": "SOURCE"
+})
 resource_uri = (result.meta or {}).get("resources", [{}])[0].get("uri")
 if resource_uri:
     contents = await session.read_resource(resource_uri)
-
-# Get notebook content in Jupyter format
-await session.call_tool("get_workspace_file_content", {
-    "path": "/Users/user@domain.com/my_notebook",
-    "format": "JUPYTER"
-})
-
-# Get file metadata without downloading content
-await session.call_tool("get_workspace_file_info", {
-    "path": "/Users/user@domain.com/large_file.py"
-})
 ```
 
-### Repo Sync and Notebook Execution
-```python
-await session.call_tool("sync_repo_and_run_notebook", {
-    "repo_id": 123,
-    "notebook_path": "/Repos/user/project/run_me"
-})
+## Available Tools
+| Category | Tool | Description |
+| --- | --- | --- |
+| Clusters | `list_clusters`, `create_cluster`, `terminate_cluster`, `get_cluster`, `start_cluster` | Manage interactive clusters |
+| Jobs | `list_jobs`, `create_job`, `run_job`, `run_notebook`, `sync_repo_and_run_notebook`, `get_run_status`, `list_job_runs`, `cancel_run` | Manage scheduled and ad-hoc jobs |
+| Workspace | `list_notebooks`, `export_notebook`, `import_notebook`, `delete_workspace_object`, `get_workspace_file_content`, `get_workspace_file_info` | Inspect and manage workspace assets |
+| DBFS | `list_files`, `dbfs_put`, `dbfs_delete` | Explore DBFS and manage files |
+| SQL | `execute_sql` | Submit SQL statements with optional `warehouse_id`, `catalog`, `schema_name` |
+| Libraries | `install_library`, `uninstall_library`, `list_cluster_libraries` | Manage cluster libraries |
+| Repos | `create_repo`, `update_repo`, `list_repos`, `pull_repo` | Manage Databricks repos |
+| Unity Catalog | `list_catalogs`, `create_catalog`, `list_schemas`, `create_schema`, `list_tables`, `create_table`, `get_table_lineage` | Unity Catalog operations |
+
+## Development Workflow
+```bash
+uv run black databricks_mcp tests
+uv run pylint databricks_mcp tests
+uv run pytest
+uv build
+uv publish --token "$PYPI_TOKEN"
 ```
-
-### Create Nightly ETL Job
-```python
-job_conf = {
-    "name": "Nightly ETL",
-    "tasks": [
-        {
-            "task_key": "etl",
-            "notebook_task": {"notebook_path": "/Repos/me/etl.py"},
-            "existing_cluster_id": "abc-123"
-        }
-    ]
-}
-await session.call_tool("create_job", job_conf)
-```
-
-## Project Structure
-
-```
-databricks-mcp/
-├── AGENTS.md                        # Contributor guide (MCP agent focus)
-├── ARCHITECTURE.md                  # Deep architecture walkthrough
-├── README.md                        # Project overview (this file)
-├── TODO.md                          # Active refactor checklist
-├── databricks_mcp/                  # Main package
-│   ├── api/                         # Databricks REST wrappers
-│   ├── cli/commands.py              # CLI entry points
-│   ├── core/                        # Settings, logging, models, utils
-│   └── server/                      # FastMCP server implementation
-├── docs/                            # Historical docs (kept for reference)
-├── tests/                           # Pytest suites (mocked, no shell scripts)
-├── pyproject.toml                   # Package metadata (v0.4.0)
-├── uv.lock                          # Locked dependency versions
-└── .env.example                     # Environment variable template
-```
-
-## Development
-
-- Format with Black: `uv run black databricks_mcp tests`
-- Lint with Pylint: `uv run pylint databricks_mcp tests`
-- Run tests locally: `uv run pytest`
-- Build distributables: `uv build`
-- Publish (requires `PYPI_TOKEN`): `uv publish --token "$PYPI_TOKEN"`
-
-## Documentation
-
-- [ARCHITECTURE.md](ARCHITECTURE.md)
-- [AGENTS.md](AGENTS.md)
-- [TODO.md](TODO.md)
-
-## Cross-Platform Notes
-
-- `uvx databricks-mcp-server@latest` works on macOS, Linux, and Windows.
-- All examples assume environment variables are set or provided by the host (Cursor, Claude, etc.).
 
 ## Testing
-
 ```bash
 uv run pytest
 ```
+Pytest suites mock Databricks APIs, providing deterministic structured outputs and transcript tests.
+
+## Publishing Builds
+Ensure `PYPI_TOKEN` is available (via `.env` or environment) before publishing:
+```bash
+uv build
+uv publish --token "$PYPI_TOKEN"
+```
+
+## Support & Contact
+- Maintainer: Olivier Debeuf De Rijcker (olivier@markov.bot)
+- Issues: [GitHub Issues](https://github.com/markov-kernel/databricks-mcp/issues)
+- Architecture deep dive: [ARCHITECTURE.md](ARCHITECTURE.md)
 
 ## License
 
