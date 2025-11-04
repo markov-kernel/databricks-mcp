@@ -301,7 +301,7 @@ All registered in `databricks_mcp/server/databricks_mcp_server.py`:
 2. Server validates/coerces arguments via Pydantic-toned metadata and dispatches to the async API module.
 3. API utilities issue REST calls with exponential retry, correlation headers, and bounded concurrency.
 4. Tool handler wraps the API payload in a `CallToolResult`, emitting a concise text summary and attaching the raw JSON to `structuredContent` (with `_meta['_request_id']`).
-5. For large artifacts (notebook exports, workspace files), the handler caches the payload and emits `resource_link` content blocks using URIs such as `databricks://exports/{id}`, allowing clients to fetch the data through the MCP resources API.
+5. For large artifacts (notebook exports, workspace files), the handler caches the payload and emits `resource_link` content blocks using URIs such as `resource://databricks/exports/{id}`, allowing clients to fetch the data through the MCP resources API.
 
 ### 11.2 SQL Execution
 1. `execute_sql` builds a statement payload; uses explicit `warehouse_id` or `settings.DATABRICKS_WAREHOUSE_ID` and forwards `catalog` / `schema_name` when provided.

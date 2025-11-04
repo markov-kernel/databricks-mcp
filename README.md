@@ -22,17 +22,17 @@ A production-ready **Model Context Protocol (MCP)** server that exposes Databric
 ---
 
 ## Key Capabilities
-- **Structured MCP Responses** – Each tool returns a `CallToolResult` with a human-readable summary in `content` and machine-readable payloads in `structuredContent` that conform to the tool’s `outputSchema`.
-- **Resource Caching** – Large notebook/workspace exports are cached once and returned as `resource_link` content blocks with URIs such as `databricks://exports/{id}` (also reflected in metadata for convenience).
-- **Progress & Metrics** – Long-running actions stream MCP progress notifications and track per-tool success/error/timeout/cancel metrics.
-- **Resilient Networking** – Shared HTTP client injects request IDs, enforces timeouts, and retries retryable Databricks responses (408/429/5xx) with exponential backoff.
-- **Async Runtime** – Built on `mcp.server.FastMCP` with centralized JSON logging and concurrency guards for predictable stdio behaviour.
+- **Structured MCP Responses** - Each tool returns a `CallToolResult` with a human-readable summary in `content` and machine-readable payloads in `structuredContent` that conform to the tool’s `outputSchema`.
+- **Resource Caching** - Large notebook/workspace exports are cached once and returned as `resource_link` content blocks with URIs such as `resource://databricks/exports/{id}` (also reflected in metadata for convenience).
+- **Progress & Metrics** - Long-running actions stream MCP progress notifications and track per-tool success/error/timeout/cancel metrics.
+- **Resilient Networking** - Shared HTTP client injects request IDs, enforces timeouts, and retries retryable Databricks responses (408/429/5xx) with exponential backoff.
+- **Async Runtime** - Built on `mcp.server.FastMCP` with centralized JSON logging and concurrency guards for predictable stdio behaviour.
 
 ## Architecture Highlights
-- `databricks_mcp/server/databricks_mcp_server.py` – FastMCP server with tool registration, progress handling, metrics, and resource caching.
-- `databricks_mcp/core/utils.py` – HTTP utilities with correlation IDs, retries, and error mapping to `DatabricksAPIError`.
-- `databricks_mcp/core/logging_utils.py` – JSON logging configuration for stderr/file outputs.
-- `databricks_mcp/core/models.py` – Pydantic models (e.g., `ClusterConfig`) used by tool schemas.
+- `databricks_mcp/server/databricks_mcp_server.py` - FastMCP server with tool registration, progress handling, metrics, and resource caching.
+- `databricks_mcp/core/utils.py` - HTTP utilities with correlation IDs, retries, and error mapping to `DatabricksAPIError`.
+- `databricks_mcp/core/logging_utils.py` - JSON logging configuration for stderr/file outputs.
+- `databricks_mcp/core/models.py` - Pydantic models (e.g., `ClusterConfig`) used by tool schemas.
 - Tests under `tests/` mock Databricks APIs to validate orchestration, structured responses, and schema metadata without shell scripts.
 
 For an in-depth tour of data flow and design decisions, see [ARCHITECTURE.md](ARCHITECTURE.md).
@@ -44,7 +44,7 @@ For an in-depth tour of data flow and design decisions, see [ARCHITECTURE.md](AR
 - [`uv`](https://github.com/astral-sh/uv) for dependency management and publishing
 
 ### Quick Install (recommended)
-Register the server with Cursor using the deeplink below – it resolves to `uvx databricks-mcp-server@latest` and picks up future updates automatically.
+Register the server with Cursor using the deeplink below - it resolves to `uvx databricks-mcp-server@latest` and picks up future updates automatically.
 
 ```text
 cursor://anysphere.cursor-deeplink/mcp/install?name=databricks-mcp&config=eyJjb21tYW5kIjoidXZ4IiwiYXJncyI6WyJkYXRhYnJpY2tzLW1jcC1zZXJ2ZXIiXSwiZW52Ijp7IkRBVEFCUklDS1NfSE9TVCI6IiR7REFUQUJSSUNLU19IT1NUfSIsIkRBVEFCUklDS1NfVE9LRU4iOiIke0RBVEFCUklDS1NfVE9LRU59IiwiREFUQUJSSUNLU19XQVJFSE9VU0VfSUQiOiIke0RBVEFCUklDS1NfV0FSRUhPVVNFX0lEfSJ9fQ==
@@ -84,7 +84,7 @@ export API_RETRY_BACKOFF_SECONDS=0.5
 ```bash
 uvx databricks-mcp-server@latest
 ```
-> Tip: append `--refresh` (e.g., `uvx databricks-mcp-server@latest --refresh`) to force `uv` to resolve the latest PyPI release after publishing.
+> Tip: append `--refresh` (e.g., `uvx databricks-mcp-server@latest --refresh`) to force `uv` to resolve the latest PyPI release after publishing. Logs are emitted as JSON lines to stderr and persisted to `databricks_mcp.log` in the working directory.
 
 To adjust logging:
 ```bash
@@ -117,7 +117,7 @@ tool_timeout_sec    = 300
 ```
 
 > Planning an HTTP deployment? Codex also supports `url = "https://…"` plus
-> `bearer_token_env_var = "DATabricks_TOKEN"` or `codex mcp login` (with
+> `bearer_token_env_var = "DATABRICKS_TOKEN"` or `codex mcp login` (with
 > `experimental_use_rmcp_client = true`).
 
 ### Cursor
@@ -145,7 +145,7 @@ claude mcp add databricks-mcp-local   -s user   -e DATABRICKS_HOST="https://your
 ```
 
 ## Working with Tool Responses
-`structuredContent` carries machine-readable payloads. Large artifacts are returned as `resource_link` content blocks using URIs like `databricks://exports/{id}` and can be fetched via the MCP resources API.
+`structuredContent` carries machine-readable payloads. Large artifacts are returned as `resource_link` content blocks using URIs like `resource://databricks/exports/{id}` and can be fetched via the MCP resources API.
 
 ```python
 result = await session.call_tool("list_clusters", {})
@@ -156,14 +156,14 @@ resource_links = [block for block in result.content if isinstance(block, dict) a
 
 Progress notifications follow MCP’s progress token mechanism; Codex surfaces these messages in the UI while a tool runs.
 
-### Example – SQL Query
+### Example - SQL Query
 ```python
 result = await session.call_tool("execute_sql", {"statement": "SELECT * FROM samples LIMIT 10"})
 print(result.content[0].text)
 rows = (result.structuredContent or {}).get("result", [])
 ```
 
-### Example – Workspace File Export
+### Example - Workspace File Export
 ```python
 result = await session.call_tool("get_workspace_file_content", {
     "path": "/Users/user@domain.com/report.ipynb",
@@ -177,8 +177,8 @@ if resource_link:
 ## Available Tools
 | Category | Tool | Description |
 | --- | --- | --- |
-| Clusters | `list_clusters`, `create_cluster`, `terminate_cluster`, `get_cluster`, `start_cluster` | Manage interactive clusters |
-| Jobs | `list_jobs`, `create_job`, `run_job`, `run_notebook`, `sync_repo_and_run_notebook`, `get_run_status`, `list_job_runs`, `cancel_run` | Manage scheduled and ad-hoc jobs |
+| Clusters | `list_clusters`, `create_cluster`, `terminate_cluster`, `get_cluster`, `start_cluster`, `resize_cluster`, `restart_cluster` | Manage interactive clusters |
+| Jobs | `list_jobs`, `create_job`, `delete_job`, `run_job`, `run_notebook`, `sync_repo_and_run_notebook`, `get_run_status`, `list_job_runs`, `cancel_run` | Manage scheduled and ad-hoc jobs |
 | Workspace | `list_notebooks`, `export_notebook`, `import_notebook`, `delete_workspace_object`, `get_workspace_file_content`, `get_workspace_file_info` | Inspect and manage workspace assets |
 | DBFS | `list_files`, `dbfs_put`, `dbfs_delete` | Explore DBFS and manage files |
 | SQL | `execute_sql` | Submit SQL statements with optional `warehouse_id`, `catalog`, `schema_name` |

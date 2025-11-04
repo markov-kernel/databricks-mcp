@@ -6,15 +6,15 @@ management.
 
 ## Layout
 
-- `test_additional_features.py` – smoke tests for auxiliary Databricks features
+- `test_additional_features.py` - smoke tests for auxiliary Databricks features
   (repos, workspace listings, etc.).
-- `test_clusters.py` – CRUD and lifecycle coverage for cluster-oriented tools.
-- `test_tool_metadata.py` – asserts that every registered tool exposes the
+- `test_clusters.py` - CRUD and lifecycle coverage for cluster-oriented tools.
+- `test_tool_metadata.py` - asserts that every registered tool exposes the
   expected description, schema metadata, and argument signatures.
-- `test_server_structured.py` – validates that tool responses populate
+- `test_server_structured.py` - validates that tool responses populate
   `structuredContent`, include human-readable text summaries, and surface
   resource links for large artifacts.
-- `test_transcript.py` – golden transcript of a `tools/list` and representative
+- `test_transcript.py` - golden transcript of a `tools/list` and representative
   `tools/call` interaction to guard against protocol regressions.
 
 All tests are async-friendly and do not require live Databricks credentials;
@@ -36,8 +36,8 @@ directory. The suite completes in under a second on a typical laptop.
 
 1. Create a new `test_*.py` file in this directory and use `pytest` naming
    conventions for functions/classes.
-2. Prefer fixtures from `tests/__init__.py` when mocking Databricks responses or
-   seeding tool contexts.
+2. Add any reusable fixtures to a new `conftest.py` (or the specific module
+   under test) so they are automatically discoverable by `pytest`.
 3. Keep protocol-level assertions (structured content shape, resource links,
    progress notifications) close to the server modules they cover.
 4. Run `uv run pytest` locally before opening a pull request and update this
