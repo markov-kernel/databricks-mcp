@@ -18,7 +18,7 @@ we're building the tools that power the next generation of AI-driven application
 
 A Model Completion Protocol (MCP) server for Databricks that provides access to Databricks functionality via the MCP protocol. This allows LLM-powered tools to interact with Databricks clusters, jobs, notebooks, and more.
 
-> **Version 0.3.1** - Latest release with issue #9 fix and enhanced MCP client compatibility.
+> **Version 0.4.0** - Structured MCP responses, resource caching, and resilience upgrades.
 
 ## 🚀 One-Click Install
 

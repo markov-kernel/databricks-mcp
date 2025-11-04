@@ -2,7 +2,7 @@
 
 This document provides a comprehensive, highly detailed, end‑to‑end overview of the Databricks MCP Server contained in this repository. It covers the project structure, runtime architecture, MCP tools and their parameters, data flow and error handling, configuration, testing, and known caveats.
 
-> Package: `databricks-mcp-server` (v0.3.1 in packaging metadata)
+> Package: `databricks-mcp-server` (v0.4.0 in packaging metadata)
 
 
 ## 1) Repository at a Glance
@@ -98,7 +98,7 @@ API_MAX_RETRIES=3
 API_RETRY_BACKOFF_SECONDS=0.5
 ```
 
-Note: Package and runtime versions are unified via `settings.VERSION` (currently `0.3.1`).
+Note: Package and runtime versions are unified via `settings.VERSION` (currently `0.4.0`).
 
 
 ## 4) Core Utilities and Error Handling

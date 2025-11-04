@@ -19,7 +19,7 @@ from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # Version
-VERSION = "0.3.1"
+VERSION = "0.4.0"
 
 
 class Settings(BaseSettings):

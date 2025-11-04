@@ -38,7 +38,7 @@ Write Python 3.10+ with 4-space indentation and Black defaults (88-character lin
 Pytest is configured via `pyproject.toml` (`asyncio_mode = auto`). Name files `test_*.py` and let pytest-asyncio manage async cases; mark slow or external tests explicitly. Mock Databricks REST helpers so tests remain offline-only, and assert that `_meta['data']` and optional `_meta['resources']` entries are populated as expected.
 
 ## Commit & Pull Request Guidelines
-Use descriptive, sentence-case commit titles similar to `Release v0.3.1` or “Remove deprecated files…”. Reference issues with `Fixes #<id>` and keep body text wrapped near 72 columns. Pull requests should summarize scope, list impacted tools or modules, mention required environment variables, and include logs or CLI captures when behavior changes. Run the commands above and attach results when relevant.
+Use descriptive, sentence-case commit titles similar to `Release v0.4.0` or “Remove deprecated files…”. Reference issues with `Fixes #<id>` and keep body text wrapped near 72 columns. Pull requests should summarize scope, list impacted tools or modules, mention required environment variables, and include logs or CLI captures when behavior changes. Run the commands above and attach results when relevant.
 
 ## Security & Configuration Tips
 Store secrets in `.env` (see `.env.example`) and exclude them from commits. Required variables: `DATABRICKS_HOST` and `DATABRICKS_TOKEN`; optionally set `DATABRICKS_WAREHOUSE_ID` for SQL defaults. Logs write to `databricks_mcp.log` in the working directory—clean or rotate before sharing artifacts.
