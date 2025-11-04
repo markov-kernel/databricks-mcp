@@ -12,7 +12,6 @@ This document provides a comprehensive, highly detailed, end‑to‑end overview
 ├─ AGENTS.md
 ├─ ARCHITECTURE.md
 ├─ README.md
-├─ TODO.md
 ├─ databricks_mcp/
 │  ├─ __init__.py
 │  ├─ __main__.py
@@ -39,14 +38,7 @@ This document provides a comprehensive, highly detailed, end‑to‑end overview
 │     ├─ app.py
 │     ├─ databricks_mcp_server.py
 │     └─ tool_helpers.py
-├─ docs/
-│  ├─ AGENTS.md
-│  ├─ CHANGELOG.md
-│  ├─ new_features.md
-│  ├─ phase1.md
-│  └─ project_structure.md
 ├─ tests/
-│  ├─ README.md
 │  ├─ test_additional_features.py
 │  ├─ test_clusters.py
 │  ├─ test_server_structured.py
@@ -309,7 +301,7 @@ All registered in `databricks_mcp/server/databricks_mcp_server.py`:
 2. Server validates/coerces arguments via Pydantic-toned metadata and dispatches to the async API module.
 3. API utilities issue REST calls with exponential retry, correlation headers, and bounded concurrency.
 4. Tool handler wraps the API payload in a `CallToolResult`, emitting a concise text summary and attaching the raw JSON to `structuredContent` (with `_meta['_request_id']`).
-5. For large artifacts (notebook exports, workspace files), the handler caches the payload and records `resource://databricks/exports/{id}` entries in `_meta['resources']` instead of embedding multi-megabyte strings.
+5. For large artifacts (notebook exports, workspace files), the handler caches the payload and emits `resource_link` content blocks using URIs such as `databricks://exports/{id}`, allowing clients to fetch the data through the MCP resources API.
 
 ### 11.2 SQL Execution
 1. `execute_sql` builds a statement payload; uses explicit `warehouse_id` or `settings.DATABRICKS_WAREHOUSE_ID` and forwards `catalog` / `schema_name` when provided.
@@ -385,13 +377,13 @@ Pseudocode using an MCP client:
 result = await session.call_tool("list_clusters", {})
 
 summary = next((block.text for block in result.content if getattr(block, "type", "") == "text"), "")
-data = (result.meta or {}).get("data", {})
+data = result.structuredContent or {}
 
 print(summary)
 print(data.get("clusters", []))
 
-for resource in (result.meta or {}).get("resources", []):
-    print("cached resource uri", resource["uri"])
+resource_links = [block for block in result.content if isinstance(block, dict) and block.get("type") == "resource_link"]
+print(resource_links)
 ```
 
 ### 16.3 DBFS upload (small)
@@ -408,9 +400,9 @@ for resource in (result.meta or {}).get("resources", []):
 ### 16.4 Notebook export and resource retrieval
 ```python
 result = await session.call_tool("export_notebook", {"path": "/Repos/user/demo", "format": "SOURCE"})
-resource_uri = (result.meta or {}).get("resources", [{}])[0].get("uri")
-if resource_uri:
-    contents = await session.read_resource(resource_uri)
+resource_link = next((block for block in result.content if isinstance(block, dict) and block.get("type") == "resource_link"), None)
+if resource_link:
+    contents = await session.read_resource(resource_link["uri"])
 ```
 
 
