@@ -5,30 +5,26 @@ Configuration settings for the Databricks MCP server.
 import os
 from typing import Any, Dict, Optional
 
-# Import dotenv if available, but don't require it
-# Only load dotenv if not running via Cursor MCP (which provides env vars directly)
+# Import dotenv if available, but don't require it.
+# Only load dotenv if not running via Cursor MCP (which provides env vars directly).
 if not os.environ.get("RUNNING_VIA_CURSOR_MCP"):
     try:
         from dotenv import load_dotenv
-        # Load .env file if it exists
-        if load_dotenv():
-            print("Successfully loaded .env file")
-        else:
-            print("No .env file found or it is empty")
+
+        load_dotenv()
     except ImportError:
-        print("WARNING: python-dotenv not found, relying on environment variables.")
-else:
-    print("RUNNING_VIA_CURSOR_MCP is set, skipping dotenv loading.")
+        pass
 
 from pydantic import field_validator
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # Version
-VERSION = "0.2.1"
+VERSION = "0.3.1"
 
 
 class Settings(BaseSettings):
     """Base settings for the application."""
+    model_config = SettingsConfigDict(env_file=".env", case_sensitive=True, extra="ignore")
 
     # Databricks API configuration
     DATABRICKS_HOST: str = os.environ.get("DATABRICKS_HOST", "https://example.databricks.net")
@@ -42,7 +38,16 @@ class Settings(BaseSettings):
 
     # Logging
     LOG_LEVEL: str = os.environ.get("LOG_LEVEL", "INFO")
-    
+
+    # Runtime controls
+    TOOL_TIMEOUT_SECONDS: int = int(os.environ.get("TOOL_TIMEOUT_SECONDS", "300"))
+    MAX_CONCURRENT_REQUESTS: int = int(os.environ.get("MAX_CONCURRENT_REQUESTS", "8"))
+
+    # HTTP / retry behavior
+    HTTP_TIMEOUT_SECONDS: float = float(os.environ.get("HTTP_TIMEOUT_SECONDS", "60"))
+    API_MAX_RETRIES: int = int(os.environ.get("API_MAX_RETRIES", "3"))
+    API_RETRY_BACKOFF_SECONDS: float = float(os.environ.get("API_RETRY_BACKOFF_SECONDS", "0.5"))
+
     # Version
     VERSION: str = VERSION
 
@@ -61,13 +66,6 @@ class Settings(BaseSettings):
             logger = logging.getLogger(__name__)
             logger.warning(f"Warehouse ID '{v}' seems unusually short")
         return v
-
-    class Config:
-        """Pydantic configuration."""
-
-        env_file = ".env"
-        case_sensitive = True
-
 
 # Create global settings instance
 settings = Settings()

@@ -47,6 +47,19 @@ class DbfsItem(BaseModel):
     file_size: Optional[int] = None
 
 
+class ClusterConfig(BaseModel):
+    """Subset of Databricks cluster configuration supported by the MCP tools."""
+
+    cluster_name: str
+    spark_version: str
+    node_type_id: str
+    num_workers: Optional[int] = None
+    autotermination_minutes: Optional[int] = None
+    autoscale: Optional[Dict[str, int]] = None
+    spark_conf: Optional[Dict[str, Any]] = None
+    custom_tags: Optional[Dict[str, str]] = None
+
+
 class Library(BaseModel):
     """Specification of a library to install on a cluster."""
 

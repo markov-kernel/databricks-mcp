@@ -1,667 +1,689 @@
 """
-Databricks MCP Server
+Databricks MCP Server implementation.
 
-This module implements a standalone MCP server that provides tools for interacting
-with Databricks APIs. It follows the Model Context Protocol standard, communicating
-via stdio and directly connecting to Databricks when tools are invoked.
+Provides MCP tools that wrap Databricks REST APIs with structured results,
+resource links for large payloads, and standardized error handling.
 """
 
+from __future__ import annotations
+
 import asyncio
+import base64
 import json
 import logging
 import sys
-import os
-from typing import Any, Dict, List, Optional, Union, cast
+import uuid
+from collections import Counter
+from dataclasses import dataclass
+from typing import Any, Awaitable, Callable, Dict, List, Optional
 
 from mcp.server import FastMCP
-from mcp.types import TextContent
-from mcp.server.stdio import stdio_server
+from mcp.server.fastmcp.server import Context
+from mcp.types import CallToolResult, TextContent
 
-from databricks_mcp.api import clusters, dbfs, jobs, notebooks, sql, libraries, repos, unity_catalog
+from databricks_mcp.api import clusters, dbfs, jobs, libraries, notebooks, repos, sql, unity_catalog
 from databricks_mcp.core.config import settings
+from databricks_mcp.core.logging_utils import configure_logging
+from databricks_mcp.core.models import ClusterConfig, Job
+from databricks_mcp.core.utils import DatabricksAPIError, request_context_id
+from databricks_mcp.server.tool_helpers import error_result, success_result
 
-# Configure logging
-logging.basicConfig(
-    level=getattr(logging, settings.LOG_LEVEL),
-    filename="databricks_mcp.log",
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-)
 logger = logging.getLogger(__name__)
 
 
-def _unwrap_params(params: Dict[str, Any]) -> Dict[str, Any]:
-    """
-    Unwrap parameters from MCP client structure.
-    
-    MCP clients may pass parameters in nested structure like:
-    {"params": {"actual_parameter": "value"}}
-    
-    This function handles both nested and flat parameter structures.
-    
-    Args:
-        params: Parameters from MCP client
-        
-    Returns:
-        Unwrapped parameters dictionary
-    """
-    if 'params' in params and isinstance(params['params'], dict):
-        return params['params']
-    return params
+@dataclass
+class ResourcePayload:
+    data: bytes
+    mime_type: Optional[str]
+    description: Optional[str]
+    is_text: bool = False
 
 
 class DatabricksMCPServer(FastMCP):
-    """An MCP server for Databricks APIs."""
+    """An MCP server for Databricks APIs with structured outputs."""
 
-    def __init__(self):
-        """Initialize the Databricks MCP server."""
-        super().__init__(name="databricks-mcp", 
-                         version="0.3.1", 
-                         instructions="Use this server to manage Databricks resources")
-        logger.info("Initializing Databricks MCP server")
-        logger.info(f"Databricks host: {settings.DATABRICKS_HOST}")
-        
-        # Register tools
-        self._register_tools()
-    
-    def _register_tools(self):
-        """Register all Databricks MCP tools."""
-        
-        # Cluster management tools
-        @self.tool(
-            name="list_clusters",
-            description="List all Databricks clusters",
+    def __init__(self) -> None:
+        super().__init__(
+            name="databricks-mcp",
+            instructions="Use this server to manage Databricks resources",
         )
-        async def list_clusters(params: Dict[str, Any]) -> List[TextContent]:
-            logger.info(f"Listing clusters with params: {params}")
-            try:
-                result = await clusters.list_clusters()
-                return [{"text": json.dumps(result)}]
-            except Exception as e:
-                logger.error(f"Error listing clusters: {str(e)}")
-                return [{"text": json.dumps({"error": str(e)})}]
-        
+        self.version = settings.VERSION
+        logger.info("Initializing Databricks MCP server")
+
+        self._task_semaphore = asyncio.Semaphore(settings.MAX_CONCURRENT_REQUESTS)
+        self._resource_cache: Dict[str, ResourcePayload] = {}
+        self._metrics: Counter[str] = Counter()
+
+        self._validate_environment()
+        self._register_resources()
+        self._register_tools()
+
+    async def _report_progress(self, ctx: Context | None, progress: float, total: float = 100.0, message: str | None = None) -> None:
+        if ctx is None:
+            return
+        try:
+            await ctx.report_progress(progress, total, message=message)
+        except Exception:  # pragma: no cover - progress failures are non-fatal
+            logger.debug("Failed to report progress %s for %s", progress, message, exc_info=True)
+
+    def _validate_environment(self) -> None:
+        missing = []
+        if not settings.DATABRICKS_HOST or settings.DATABRICKS_HOST == "https://example.databricks.net":
+            missing.append("DATABRICKS_HOST")
+        if settings.DATABRICKS_TOKEN == "dapi_token_placeholder":
+            missing.append("DATABRICKS_TOKEN")
+
+        if missing:
+            hint = ", ".join(missing)
+            logger.warning("Missing Databricks credentials: %s", hint)
+
+    async def call_tool(self, name: str, arguments: Dict[str, Any]) -> CallToolResult:  # type: ignore[override]
+        """Expose structured call_tool for in-process callers (CLI/tests)."""
+        context = self.get_context()
+        result = await self._tool_manager.call_tool(name, arguments, context=context, convert_result=False)
+
+        if isinstance(result, CallToolResult):
+            return result
+
+        if isinstance(result, tuple) and len(result) == 2:
+            unstructured, structured = result
+            return CallToolResult(content=list(unstructured), _meta={"data": structured}, isError=False)
+
+        if isinstance(result, dict):
+            return CallToolResult(
+                content=[TextContent(type="text", text=json.dumps(result, indent=2))],
+                _meta={"data": result},
+                isError=False,
+            )
+
+        if hasattr(result, "__iter__"):
+            return CallToolResult(content=list(result), _meta={"data": {}}, isError=False)
+
+        return CallToolResult(
+            content=[TextContent(type="text", text=f"Unexpected return type: {type(result).__name__}")],
+            _meta={"data": {"error": "unexpected_type"}},
+            isError=True,
+        )
+
+    # ------------------------------------------------------------------
+    # Resource helpers
+    # ------------------------------------------------------------------
+    def _register_resources(self) -> None:
+        @self.resource("resource://databricks/exports/{resource_id}", description="Cached Databricks export")
+        async def read_cached_resource(resource_id: str) -> str | bytes:
+            payload = self._resource_cache.get(resource_id)
+            if payload is None:
+                raise ValueError(f"Resource {resource_id} not found")
+            if payload.is_text:
+                return payload.data.decode("utf-8")
+            return payload.data
+
+    def _cache_resource(
+        self,
+        content: bytes | str,
+        *,
+        mime_type: Optional[str],
+        description: Optional[str],
+    ) -> str:
+        if isinstance(content, str):
+            payload = ResourcePayload(data=content.encode("utf-8"), mime_type=mime_type, description=description, is_text=True)
+        else:
+            payload = ResourcePayload(data=content, mime_type=mime_type, description=description, is_text=False)
+
+        resource_id = uuid.uuid4().hex
+        self._resource_cache[resource_id] = payload
+        return f"resource://databricks/exports/{resource_id}"
+
+    # ------------------------------------------------------------------
+    # Execution helper
+    # ------------------------------------------------------------------
+    async def _run_tool(
+        self,
+        name: str,
+        action: Callable[[], Awaitable[Any]],
+        summary_fn: Callable[[Any], str],
+        ctx: Context | None,
+    ) -> CallToolResult:
+        inbound_request_id = getattr(ctx, "request_id", None) if ctx else None
+        execution_id = inbound_request_id or uuid.uuid4().hex
+        extra = {"request_id": execution_id}
+        token = request_context_id.set(execution_id)
+
+        try:
+            await self._report_progress(ctx, 0, message=f"Starting {name}")
+            async with self._task_semaphore:
+                try:
+                    result = await asyncio.wait_for(action(), timeout=settings.TOOL_TIMEOUT_SECONDS)
+                except asyncio.TimeoutError:
+                    message = f"{name} timed out after {settings.TOOL_TIMEOUT_SECONDS}s"
+                    logger.warning("%s", message, extra=extra)
+                    self._metrics[f"{name}.timeout"] += 1
+                    return error_result(message, status_code=504)
+                except asyncio.CancelledError:
+                    message = f"{name} was cancelled"
+                    logger.info(message, extra=extra)
+                    self._metrics[f"{name}.cancelled"] += 1
+                    return error_result(message, status_code=499)
+                except DatabricksAPIError as err:
+                    message = f"{name} failed: {err.message}"
+                    logger.warning(message, extra=extra)
+                    self._metrics[f"{name}.error"] += 1
+                    return error_result(message, details=err.response, status_code=err.status_code)
+                except Exception as err:  # pylint: disable=broad-except
+                    logger.exception("Unexpected error running %s", name, extra=extra)
+                    self._metrics[f"{name}.error"] += 1
+                    return error_result(f"{name} failed unexpectedly", details=str(err))
+        finally:
+            request_context_id.reset(token)
+
+        summary = summary_fn(result)
+        response = success_result(summary, result)
+        meta = response.meta or {}
+        meta.setdefault("data", {})
+        meta["_request_id"] = execution_id
+        meta["tool"] = name
+        response.meta = meta
+        self._metrics[f"{name}.success"] += 1
+        await self._report_progress(ctx, 100, message=f"Completed {name}")
+        logger.info("Tool %s succeeded", name, extra={"request_id": execution_id, "tool": name})
+        return response
+
+    # ------------------------------------------------------------------
+    # Tool registration
+    # ------------------------------------------------------------------
+    def _register_tools(self) -> None:
+        # Cluster tools
+        @self.tool(name="list_clusters", description="List all Databricks clusters")
+        async def list_clusters(ctx: Context | None = None) -> CallToolResult:
+            return await self._run_tool(
+                "list_clusters",
+                lambda: clusters.list_clusters(),
+                lambda data: f"Found {len(data.get('clusters', []))} clusters",
+                ctx,
+            )
+
         @self.tool(
             name="create_cluster",
-            description="Create a new Databricks cluster with parameters: cluster_name (required), spark_version (required), node_type_id (required), num_workers, autotermination_minutes",
-        )
-        async def create_cluster(params: Dict[str, Any]) -> List[TextContent]:
-            logger.info(f"Creating cluster with params: {params}")
-            try:
-                actual_params = _unwrap_params(params)
-                result = await clusters.create_cluster(actual_params)
-                return [{"text": json.dumps(result)}]
-            except Exception as e:
-                logger.error(f"Error creating cluster: {str(e)}")
-                return [{"text": json.dumps({"error": str(e)})}]
-        
-        @self.tool(
-            name="terminate_cluster",
-            description="Terminate a Databricks cluster with parameter: cluster_id (required)",
-        )
-        async def terminate_cluster(params: Dict[str, Any]) -> List[TextContent]:
-            logger.info(f"Terminating cluster with params: {params}")
-            try:
-                actual_params = _unwrap_params(params)
-                result = await clusters.terminate_cluster(actual_params.get("cluster_id"))
-                return [{"text": json.dumps(result)}]
-            except Exception as e:
-                logger.error(f"Error terminating cluster: {str(e)}")
-                return [{"text": json.dumps({"error": str(e)})}]
-        
-        @self.tool(
-            name="get_cluster",
-            description="Get information about a specific Databricks cluster with parameter: cluster_id (required)",
-        )
-        async def get_cluster(params: Dict[str, Any]) -> List[TextContent]:
-            logger.info(f"Getting cluster info with params: {params}")
-            try:
-                actual_params = _unwrap_params(params)
-                result = await clusters.get_cluster(actual_params.get("cluster_id"))
-                return [{"text": json.dumps(result)}]
-            except Exception as e:
-                logger.error(f"Error getting cluster info: {str(e)}")
-                return [{"text": json.dumps({"error": str(e)})}]
-        
-        @self.tool(
-            name="start_cluster",
-            description="Start a terminated Databricks cluster with parameter: cluster_id (required)",
-        )
-        async def start_cluster(params: Dict[str, Any]) -> List[TextContent]:
-            logger.info(f"Starting cluster with params: {params}")
-            try:
-                actual_params = _unwrap_params(params)
-                result = await clusters.start_cluster(actual_params.get("cluster_id"))
-                return [{"text": json.dumps(result)}]
-            except Exception as e:
-                logger.error(f"Error starting cluster: {str(e)}")
-                return [{"text": json.dumps({"error": str(e)})}]
-        
-        # Job management tools
-        @self.tool(
-            name="list_jobs",
-            description="List all Databricks jobs",
-        )
-        async def list_jobs(params: Dict[str, Any]) -> List[TextContent]:
-            logger.info(f"Listing jobs with params: {params}")
-            try:
-                result = await jobs.list_jobs()
-                return [{"text": json.dumps(result)}]
-            except Exception as e:
-                logger.error(f"Error listing jobs: {str(e)}")
-                return [{"text": json.dumps({"error": str(e)})}]
+            description="Create a new Databricks cluster",
+                    )
+        async def create_cluster(cluster: ClusterConfig, ctx: Context | None = None) -> CallToolResult:
+            payload = cluster.model_dump(exclude_none=True)
 
-        @self.tool(
-            name="create_job",
-            description="Create a Databricks job. Provide name and tasks list.",
-        )
-        async def create_job_tool(params: Dict[str, Any]) -> List[TextContent]:
-            logger.info(f"Creating job with params: {params}")
-            try:
-                actual_params = _unwrap_params(params)
-                result = await jobs.create_job(actual_params)
-                return [{"text": json.dumps(result)}]
-            except Exception as e:
-                logger.error(f"Error creating job: {str(e)}")
-                return [{"text": json.dumps({"error": str(e)})}]
+            async def action() -> Any:
+                return await clusters.create_cluster(payload)
 
-        @self.tool(
-            name="delete_job",
-            description="Delete a Databricks job with parameter: job_id",
-        )
-        async def delete_job_tool(params: Dict[str, Any]) -> List[TextContent]:
-            logger.info(f"Deleting job with params: {params}")
-            try:
-                actual_params = _unwrap_params(params)
-                result = await jobs.delete_job(actual_params.get("job_id"))
-                return [{"text": json.dumps(result)}]
-            except Exception as e:
-                logger.error(f"Error deleting job: {str(e)}")
-                return [{"text": json.dumps({"error": str(e)})}]
-        
-        @self.tool(
-            name="run_job",
-            description="Run a Databricks job with parameters: job_id (required), notebook_params (optional)",
-        )
-        async def run_job(params: Dict[str, Any]) -> List[TextContent]:
-            logger.info(f"Running job with params: {params}")
-            try:
-                actual_params = _unwrap_params(params)
-                notebook_params = actual_params.get("notebook_params", {})
-                result = await jobs.run_job(actual_params.get("job_id"), notebook_params)
-                return [{"text": json.dumps(result)}]
-            except Exception as e:
-                logger.error(f"Error running job: {str(e)}")
-                return [{"text": json.dumps({"error": str(e)})}]
+            return await self._run_tool(
+                "create_cluster",
+                action,
+                lambda data: f"Cluster {data.get('cluster_id', payload['cluster_name'])} creation submitted",
+                ctx,
+            )
+
+        @self.tool(name="terminate_cluster", description="Terminate a cluster")
+        async def terminate_cluster(cluster_id: str, ctx: Context | None = None) -> CallToolResult:
+            return await self._run_tool(
+                "terminate_cluster",
+                lambda: clusters.terminate_cluster(cluster_id),
+                lambda _: f"Termination requested for cluster {cluster_id}",
+                ctx,
+            )
+
+        @self.tool(name="get_cluster", description="Get information about a cluster")
+        async def get_cluster(cluster_id: str, ctx: Context | None = None) -> CallToolResult:
+            return await self._run_tool(
+                "get_cluster",
+                lambda: clusters.get_cluster(cluster_id),
+                lambda data: f"Cluster {data.get('cluster_id', cluster_id)} state: {data.get('state', 'unknown')}",
+                ctx,
+            )
+
+        @self.tool(name="start_cluster", description="Start a terminated cluster")
+        async def start_cluster(cluster_id: str, ctx: Context | None = None) -> CallToolResult:
+            return await self._run_tool(
+                "start_cluster",
+                lambda: clusters.start_cluster(cluster_id),
+                lambda _: f"Start requested for cluster {cluster_id}",
+                ctx,
+            )
+
+        # Job tools
+        @self.tool(name="list_jobs", description="List Databricks jobs")
+        async def list_jobs(ctx: Context | None = None) -> CallToolResult:
+            return await self._run_tool(
+                "list_jobs",
+                lambda: jobs.list_jobs(),
+                lambda data: f"Discovered {len(data.get('jobs', []))} jobs",
+                ctx,
+            )
+
+        @self.tool(name="create_job", description="Create a Databricks job")
+        async def create_job(job: Job, ctx: Context | None = None) -> CallToolResult:
+            async def action() -> Any:
+                return await jobs.create_job(job.model_dump(exclude_none=True))
+
+            return await self._run_tool(
+                "create_job",
+                action,
+                lambda data: f"Created job {data.get('job_id')} for {job.name}",
+                ctx,
+            )
+
+        @self.tool(name="delete_job", description="Delete a Databricks job")
+        async def delete_job(job_id: int, ctx: Context | None = None) -> CallToolResult:
+            return await self._run_tool(
+                "delete_job",
+                lambda: jobs.delete_job(job_id),
+                lambda _: f"Deleted job {job_id}",
+                ctx,
+            )
+
+        @self.tool(name="run_job", description="Trigger a job run")
+        async def run_job(job_id: int, notebook_params: Optional[Dict[str, Any]] = None, ctx: Context | None = None) -> CallToolResult:
+            return await self._run_tool(
+                "run_job",
+                lambda: jobs.run_job(job_id, notebook_params or {}),
+                lambda data: f"Run {data.get('run_id')} started for job {job_id}",
+                ctx,
+            )
 
         @self.tool(
             name="run_notebook",
-            description="Submit a one-time notebook run with parameters: notebook_path (required), existing_cluster_id (optional), base_parameters (optional)",
-        )
-        async def run_notebook_tool(params: Dict[str, Any]) -> List[TextContent]:
-            logger.info(f"Running notebook with params: {params}")
-            try:
-                actual_params = _unwrap_params(params)
-                result = await jobs.run_notebook(
-                    notebook_path=actual_params.get("notebook_path"),
-                    existing_cluster_id=actual_params.get("existing_cluster_id"),
-                    base_parameters=actual_params.get("base_parameters"),
-                )
-                return [{"text": json.dumps(result)}]
-            except Exception as e:
-                logger.error(f"Error running notebook: {str(e)}")
-                return [{"text": json.dumps({"error": str(e)})}]
+            description="Submit a one-time notebook run",
+                    )
+        async def run_notebook(
+            notebook_path: str,
+            existing_cluster_id: Optional[str] = None,
+            base_parameters: Optional[Dict[str, Any]] = None,
+            ctx: Context | None = None,
+        ) -> CallToolResult:
+            return await self._run_tool(
+                "run_notebook",
+                lambda: jobs.run_notebook(
+                    notebook_path=notebook_path,
+                    existing_cluster_id=existing_cluster_id,
+                    base_parameters=base_parameters,
+                ),
+                lambda data: f"Notebook run {data.get('run_id')} started for {notebook_path}",
+                ctx,
+            )
 
         @self.tool(
             name="sync_repo_and_run_notebook",
-            description="Pull a repo then run a notebook. Parameters: repo_id, notebook_path, existing_cluster_id (optional), base_parameters (optional)",
-        )
-        async def sync_repo_and_run_notebook(params: Dict[str, Any]) -> List[TextContent]:
-            logger.info(f"Syncing repo and running notebook with params: {params}")
-            try:
-                actual_params = _unwrap_params(params)
-                await repos.pull_repo(actual_params.get("repo_id"))
-                result = await jobs.run_notebook(
-                    notebook_path=actual_params.get("notebook_path"),
-                    existing_cluster_id=actual_params.get("existing_cluster_id"),
-                    base_parameters=actual_params.get("base_parameters"),
+            description="Pull a repo and run a notebook",
+                    )
+        async def sync_repo_and_run_notebook(
+            repo_id: int,
+            notebook_path: str,
+            existing_cluster_id: Optional[str] = None,
+            base_parameters: Optional[Dict[str, Any]] = None,
+            ctx: Context | None = None,
+        ) -> CallToolResult:
+            async def action() -> Any:
+                await self._report_progress(ctx, 25, message="Pulling repo")
+                await repos.pull_repo(repo_id)
+                await self._report_progress(ctx, 60, message="Triggering notebook run")
+                return await jobs.run_notebook(
+                    notebook_path=notebook_path,
+                    existing_cluster_id=existing_cluster_id,
+                    base_parameters=base_parameters,
                 )
-                return [{"text": json.dumps(result)}]
-            except Exception as e:
-                logger.error(f"Error syncing repo and running notebook: {str(e)}")
-                return [{"text": json.dumps({"error": str(e)})}]
 
-        @self.tool(
-            name="get_run_status",
-            description="Get status for a job run with parameter: run_id",
-        )
-        async def get_run_status(params: Dict[str, Any]) -> List[TextContent]:
-            logger.info(f"Getting run status with params: {params}")
-            try:
-                actual_params = _unwrap_params(params)
-                result = await jobs.get_run_status(actual_params.get("run_id"))
-                return [{"text": json.dumps(result)}]
-            except Exception as e:
-                logger.error(f"Error getting run status: {str(e)}")
-                return [{"text": json.dumps({"error": str(e)})}]
+            return await self._run_tool(
+                "sync_repo_and_run_notebook",
+                action,
+                lambda data: f"Repo {repo_id} synced; notebook run {data.get('run_id')} started",
+                ctx,
+            )
 
-        @self.tool(
-            name="list_job_runs",
-            description="List recent runs for a job with parameter: job_id",
-        )
-        async def list_job_runs(params: Dict[str, Any]) -> List[TextContent]:
-            logger.info(f"Listing job runs with params: {params}")
-            try:
-                actual_params = _unwrap_params(params)
-                result = await jobs.list_runs(actual_params.get("job_id"))
-                return [{"text": json.dumps(result)}]
-            except Exception as e:
-                logger.error(f"Error listing job runs: {str(e)}")
-                return [{"text": json.dumps({"error": str(e)})}]
+        @self.tool(name="get_run_status", description="Get status for a job run")
+        async def get_run_status(run_id: int, ctx: Context | None = None) -> CallToolResult:
+            return await self._run_tool(
+                "get_run_status",
+                lambda: jobs.get_run_status(run_id),
+                lambda data: f"Run {run_id} state: {data.get('state')}",
+                ctx,
+            )
 
-        @self.tool(
-            name="cancel_run",
-            description="Cancel a job run with parameter: run_id",
-        )
-        async def cancel_run_tool(params: Dict[str, Any]) -> List[TextContent]:
-            logger.info(f"Cancelling run with params: {params}")
-            try:
-                actual_params = _unwrap_params(params)
-                result = await jobs.cancel_run(actual_params.get("run_id"))
-                return [{"text": json.dumps(result)}]
-            except Exception as e:
-                logger.error(f"Error cancelling run: {str(e)}")
-                return [{"text": json.dumps({"error": str(e)})}]
-        
-        # Notebook management tools
-        @self.tool(
-            name="list_notebooks",
-            description="List notebooks in a workspace directory with parameter: path (required)",
-        )
-        async def list_notebooks(params: Dict[str, Any]) -> List[TextContent]:
-            logger.info(f"Listing notebooks with params: {params}")
-            try:
-                actual_params = _unwrap_params(params)
-                result = await notebooks.list_notebooks(actual_params.get("path"))
-                return [{"text": json.dumps(result)}]
-            except Exception as e:
-                logger.error(f"Error listing notebooks: {str(e)}")
-                return [{"text": json.dumps({"error": str(e)})}]
-        
-        @self.tool(
-            name="export_notebook",
-            description="Export a notebook from the workspace with parameters: path (required), format (optional, one of: SOURCE, HTML, JUPYTER, DBC)",
-        )
-        async def export_notebook(params: Dict[str, Any]) -> List[TextContent]:
-            logger.info(f"Exporting notebook with params: {params}")
-            try:
-                actual_params = _unwrap_params(params)
-                format_type = actual_params.get("format", "SOURCE")
-                result = await notebooks.export_notebook(actual_params.get("path"), format_type)
-                
-                # For notebooks, we might want to trim the response for readability
-                content = result.get("content", "")
-                if len(content) > 1000:
-                    summary = f"{content[:1000]}... [content truncated, total length: {len(content)} characters]"
-                    result["content"] = summary
-                
-                return [{"text": json.dumps(result)}]
-            except Exception as e:
-                logger.error(f"Error exporting notebook: {str(e)}")
-                return [{"text": json.dumps({"error": str(e)})}]
+        @self.tool(name="list_job_runs", description="List recent job runs")
+        async def list_job_runs(job_id: Optional[int] = None, ctx: Context | None = None) -> CallToolResult:
+            return await self._run_tool(
+                "list_job_runs",
+                lambda: jobs.list_runs(job_id=job_id),
+                lambda data: f"Found {len(data.get('runs', []))} runs",
+                ctx,
+            )
 
-        @self.tool(
-            name="import_notebook",
-            description="Import a notebook; parameters: path, content (base64 or text), format (optional)",
-        )
-        async def import_notebook_tool(params: Dict[str, Any]) -> List[TextContent]:
-            logger.info(f"Importing notebook with params: {params}")
-            try:
-                actual_params = _unwrap_params(params)
-                path = actual_params.get("path")
-                content = actual_params.get("content")
-                fmt = actual_params.get("format", "SOURCE")
-                result = await notebooks.import_notebook(path, content, fmt)
-                return [{"text": json.dumps(result)}]
-            except Exception as e:
-                logger.error(f"Error importing notebook: {str(e)}")
-                return [{"text": json.dumps({"error": str(e)})}]
+        @self.tool(name="cancel_run", description="Cancel a job run")
+        async def cancel_run(run_id: int, ctx: Context | None = None) -> CallToolResult:
+            return await self._run_tool(
+                "cancel_run",
+                lambda: jobs.cancel_run(run_id),
+                lambda _: f"Cancel requested for run {run_id}",
+                ctx,
+            )
+
+        # Notebook workspace tools
+        @self.tool(name="list_notebooks", description="List notebooks in a directory")
+        async def list_notebooks(path: str, ctx: Context | None = None) -> CallToolResult:
+            return await self._run_tool(
+                "list_notebooks",
+                lambda: notebooks.list_notebooks(path),
+                lambda data: f"Found {len(data.get('objects', []))} objects in {path}",
+                ctx,
+            )
+
+        @self.tool(name="export_notebook", description="Export a notebook")
+        async def export_notebook(path: str, format: str = "SOURCE", ctx: Context | None = None) -> CallToolResult:
+            result = await self._run_tool(
+                "export_notebook",
+                lambda: notebooks.export_notebook(path, format=format),
+                lambda data: f"Exported notebook {path} in {format} format",
+                ctx,
+            )
+
+            data_block = (result.meta or {}).get("data") or {}
+            if result.isError or not data_block:
+                return result
+
+            content_b64 = data_block.get("content")
+            decoded = data_block.get("decoded_content")
+
+            mime = {
+                "SOURCE": "text/plain",
+                "HTML": "text/html",
+                "JUPYTER": "application/json",
+                "DBC": "application/x-databricks-notebook",
+            }.get(format, "application/octet-stream")
+
+            if decoded:
+                resource_uri = self._cache_resource(decoded, mime_type=mime, description=f"Notebook {path} ({format})")
+            elif content_b64:
+                raw_bytes = base64.b64decode(content_b64)
+                resource_uri = self._cache_resource(raw_bytes, mime_type=mime, description=f"Notebook {path} ({format})")
+            else:
+                return result
+
+            meta = result.meta or {}
+            resources_meta = meta.setdefault("resources", [])
+            resources_meta.append({"uri": resource_uri, "mimeType": mime, "description": f"Notebook {path} ({format})"})
+            result.meta = meta
+            await self._report_progress(ctx, 90, message="Notebook export cached")
+            return result
+
+        @self.tool(name="import_notebook", description="Import a notebook")
+        async def import_notebook(
+            path: str,
+            content: str,
+            format: str = "SOURCE",
+            language: Optional[str] = None,
+            overwrite: bool = False,
+            ctx: Context | None = None,
+        ) -> CallToolResult:
+            return await self._run_tool(
+                "import_notebook",
+                lambda: notebooks.import_notebook(path, content, format=format, language=language, overwrite=overwrite),
+                lambda _: f"Imported notebook to {path}",
+                ctx,
+            )
 
         @self.tool(
             name="delete_workspace_object",
-            description="Delete a notebook or directory with parameters: path, recursive (optional)",
-        )
-        async def delete_workspace_object(params: Dict[str, Any]) -> List[TextContent]:
-            logger.info(f"Deleting workspace object with params: {params}")
-            try:
-                actual_params = _unwrap_params(params)
-                result = await notebooks.delete_notebook(
-                    actual_params.get("path"), actual_params.get("recursive", False)
-                )
-                return [{"text": json.dumps(result)}]
-            except Exception as e:
-                logger.error(f"Error deleting workspace object: {str(e)}")
-                return [{"text": json.dumps({"error": str(e)})}]
-        
+            description="Delete a workspace notebook or directory",
+                    )
+        async def delete_workspace_object(path: str, recursive: bool = False, ctx: Context | None = None) -> CallToolResult:
+            return await self._run_tool(
+                "delete_workspace_object",
+                lambda: notebooks.delete_notebook(path, recursive=recursive),
+                lambda _: f"Deleted workspace path {path}",
+                ctx,
+            )
+
+        @self.tool(name="get_workspace_file_content", description="Retrieve workspace file content")
+        async def get_workspace_file_content(path: str, format: str = "SOURCE", ctx: Context | None = None) -> CallToolResult:
+            result = await self._run_tool(
+                "get_workspace_file_content",
+                lambda: notebooks.export_workspace_file(path, format=format),
+                lambda data: f"Retrieved workspace file {path}",
+                ctx,
+            )
+
+            data_block = (result.meta or {}).get("data") or {}
+            if result.isError or not data_block:
+                return result
+
+            decoded = data_block.get("decoded_content")
+            mime = "application/json" if data_block.get("content_type") == "json" else "text/plain"
+
+            if decoded:
+                resource_uri = self._cache_resource(decoded, mime_type=mime, description=f"Workspace file {path}")
+            elif data_block.get("content"):
+                raw_bytes = base64.b64decode(data_block["content"])
+                resource_uri = self._cache_resource(raw_bytes, mime_type=mime, description=f"Workspace file {path}")
+            else:
+                resource_uri = None
+
+            if resource_uri:
+                meta = result.meta or {}
+                resources_meta = meta.setdefault("resources", [])
+                resources_meta.append({"uri": resource_uri, "mimeType": mime, "description": f"Workspace file {path}"})
+                result.meta = meta
+
+            return result
+
+        @self.tool(name="get_workspace_file_info", description="Retrieve workspace metadata")
+        async def get_workspace_file_info(path: str, ctx: Context | None = None) -> CallToolResult:
+            return await self._run_tool(
+                "get_workspace_file_info",
+                lambda: notebooks.get_workspace_file_info(path),
+                lambda data: f"Metadata returned for {data.get('path', path)}",
+                ctx,
+            )
+
         # DBFS tools
-        @self.tool(
-            name="list_files",
-            description="List files and directories in a DBFS path with parameter: dbfs_path (required)",
-        )
-        async def list_files(params: Dict[str, Any]) -> List[TextContent]:
-            logger.info(f"Listing files with params: {params}")
-            try:
-                actual_params = _unwrap_params(params)
-                result = await dbfs.list_files(actual_params.get("dbfs_path"))
-                return [{"text": json.dumps(result)}]
-            except Exception as e:
-                logger.error(f"Error listing files: {str(e)}")
-                return [{"text": json.dumps({"error": str(e)})}]
+        @self.tool(name="list_files", description="List DBFS files for a path")
+        async def list_files(path: str, ctx: Context | None = None) -> CallToolResult:
+            return await self._run_tool(
+                "list_files",
+                lambda: dbfs.list_files(path),
+                lambda data: f"Found {len(data.get('paths') or data.get('files', []))} entries at {path}",
+                ctx,
+            )
 
-        @self.tool(
-            name="dbfs_put",
-            description="Upload a small file to DBFS with parameters: dbfs_path, content_base64",
-        )
-        async def dbfs_put(params: Dict[str, Any]) -> List[TextContent]:
-            logger.info(f"Uploading file to DBFS with params: {params}")
-            try:
-                actual_params = _unwrap_params(params)
-                path = actual_params.get("dbfs_path")
-                content = actual_params.get("content_base64", "").encode()
-                import base64
-                data = base64.b64decode(content)
-                result = await dbfs.put_file(path, data)
-                return [{"text": json.dumps(result)}]
-            except Exception as e:
-                logger.error(f"Error uploading file: {str(e)}")
-                return [{"text": json.dumps({"error": str(e)})}]
+        @self.tool(name="dbfs_put", description="Upload small content to DBFS")
+        async def dbfs_put(path: str, content: str, overwrite: bool = True, ctx: Context | None = None) -> CallToolResult:
+            return await self._run_tool(
+                "dbfs_put",
+                lambda: dbfs.put_file(path, content.encode("utf-8"), overwrite=overwrite),
+                lambda _: f"Uploaded content to {path}",
+                ctx,
+            )
 
-        @self.tool(
-            name="dbfs_delete",
-            description="Delete a file or directory in DBFS with parameters: dbfs_path, recursive (optional)",
-        )
-        async def dbfs_delete(params: Dict[str, Any]) -> List[TextContent]:
-            logger.info(f"Deleting DBFS path with params: {params}")
-            try:
-                actual_params = _unwrap_params(params)
-                result = await dbfs.delete_file(actual_params.get("dbfs_path"), actual_params.get("recursive", False))
-                return [{"text": json.dumps(result)}]
-            except Exception as e:
-                logger.error(f"Error deleting file: {str(e)}")
-                return [{"text": json.dumps({"error": str(e)})}]
-        
-        @self.tool(
-            name="pull_repo",
-            description="Pull the latest commit for a repo with parameter: repo_id (required)",
-        )
-        async def pull_repo_tool(params: Dict[str, Any]) -> List[TextContent]:
-            logger.info(f"Pulling repo with params: {params}")
-            try:
-                actual_params = _unwrap_params(params)
-                result = await repos.pull_repo(actual_params.get("repo_id"))
-                return [{"text": json.dumps(result)}]
-            except Exception as e:
-                logger.error(f"Error pulling repo: {str(e)}")
-                return [{"text": json.dumps({"error": str(e)})}]
-        
+        @self.tool(name="dbfs_delete", description="Delete a DBFS path")
+        async def dbfs_delete(path: str, recursive: bool = False, ctx: Context | None = None) -> CallToolResult:
+            return await self._run_tool(
+                "dbfs_delete",
+                lambda: dbfs.delete_file(path, recursive=recursive),
+                lambda _: f"Deleted DBFS path {path}",
+                ctx,
+            )
+
+        # Library tools
+        @self.tool(name="install_library", description="Install libraries on a cluster")
+        async def install_library(cluster_id: str, libraries_spec: List[Dict[str, Any]], ctx: Context | None = None) -> CallToolResult:
+            return await self._run_tool(
+                "install_library",
+                lambda: libraries.install_library(cluster_id, libraries_spec),
+                lambda _: f"Library install requested on cluster {cluster_id}",
+                ctx,
+            )
+
+        @self.tool(name="uninstall_library", description="Uninstall libraries from a cluster")
+        async def uninstall_library(cluster_id: str, libraries_spec: List[Dict[str, Any]], ctx: Context | None = None) -> CallToolResult:
+            return await self._run_tool(
+                "uninstall_library",
+                lambda: libraries.uninstall_library(cluster_id, libraries_spec),
+                lambda _: f"Library uninstall requested on cluster {cluster_id}",
+                ctx,
+            )
+
+        @self.tool(name="list_cluster_libraries", description="List libraries for a cluster")
+        async def list_cluster_libraries(cluster_id: str, ctx: Context | None = None) -> CallToolResult:
+            return await self._run_tool(
+                "list_cluster_libraries",
+                lambda: libraries.list_cluster_libraries(cluster_id),
+                lambda data: f"Cluster {cluster_id} has {len(data.get('library_statuses', []))} enrolled libraries",
+                ctx,
+            )
+
+        # Repo tools
+        @self.tool(name="create_repo", description="Create or clone a repo")
+        async def create_repo(url: str, provider: str, branch: Optional[str] = None, path: Optional[str] = None, ctx: Context | None = None) -> CallToolResult:
+            return await self._run_tool(
+                "create_repo",
+                lambda: repos.create_repo(url, provider, branch=branch, path=path),
+                lambda data: f"Repo {data.get('id')} created from {url}",
+                ctx,
+            )
+
+        @self.tool(name="update_repo", description="Update repo branch or tag")
+        async def update_repo(repo_id: int, branch: Optional[str] = None, tag: Optional[str] = None, ctx: Context | None = None) -> CallToolResult:
+            return await self._run_tool(
+                "update_repo",
+                lambda: repos.update_repo(repo_id, branch=branch, tag=tag),
+                lambda _: f"Updated repo {repo_id}",
+                ctx,
+            )
+
+        @self.tool(name="list_repos", description="List repos in the workspace")
+        async def list_repos(path_prefix: Optional[str] = None, ctx: Context | None = None) -> CallToolResult:
+            return await self._run_tool(
+                "list_repos",
+                lambda: repos.list_repos(path_prefix=path_prefix),
+                lambda data: f"Found {len(data.get('repos', []))} repos",
+                ctx,
+            )
+
+        @self.tool(name="pull_repo", description="Pull latest commit for a repo")
+        async def pull_repo(repo_id: int, ctx: Context | None = None) -> CallToolResult:
+            return await self._run_tool(
+                "pull_repo",
+                lambda: repos.pull_repo(repo_id),
+                lambda _: f"Pulled latest changes for repo {repo_id}",
+                ctx,
+            )
+
         # SQL tools
-        @self.tool(
-            name="execute_sql",
-            description="Execute a SQL statement with parameters: statement (required), warehouse_id (optional - uses DATABRICKS_WAREHOUSE_ID env var if not provided), catalog (optional), schema (optional)",
-        )
-        async def execute_sql(params: Dict[str, Any]) -> List[TextContent]:
-            logger.info(f"Executing SQL with params: {params}")
-            try:
-                actual_params = _unwrap_params(params)
-                    
-                statement = actual_params.get("statement")
-                warehouse_id = actual_params.get("warehouse_id")
-                catalog = actual_params.get("catalog")
-                schema = actual_params.get("schema")
-                
+        @self.tool(name="execute_sql", description="Execute a SQL statement")
+        async def execute_sql(
+            statement: str,
+            warehouse_id: Optional[str] = None,
+            catalog: Optional[str] = None,
+            schema_name: Optional[str] = None,
+            ctx: Context | None = None,
+        ) -> CallToolResult:
+            async def action() -> Any:
+                await self._report_progress(ctx, 10, message="Submitting SQL statement")
                 result = await sql.execute_statement(
                     statement=statement,
                     warehouse_id=warehouse_id,
                     catalog=catalog,
-                    schema=schema
+                    schema=schema_name,
                 )
-                return [{"text": json.dumps(result)}]
-            except Exception as e:
-                logger.error(f"Error executing SQL: {str(e)}")
-                return [{"text": json.dumps({"error": str(e)})}]
+                await self._report_progress(ctx, 70, message="SQL statement completed")
+                return result
 
-        # Cluster library tools
-        @self.tool(
-            name="install_library",
-            description="Install a library on a cluster with parameters: cluster_id, libraries",
-        )
-        async def install_library_tool(params: Dict[str, Any]) -> List[TextContent]:
-            logger.info(f"Installing library with params: {params}")
-            try:
-                actual_params = _unwrap_params(params)
-                result = await libraries.install_library(actual_params.get("cluster_id"), actual_params.get("libraries", []))
-                return [{"text": json.dumps(result)}]
-            except Exception as e:
-                logger.error(f"Error installing library: {str(e)}")
-                return [{"text": json.dumps({"error": str(e)})}]
+            return await self._run_tool(
+                "execute_sql",
+                action,
+                lambda data: f"SQL statement {data.get('statement_id', 'completed')} executed",
+                ctx,
+            )
 
-        @self.tool(
-            name="uninstall_library",
-            description="Uninstall a library from a cluster with parameters: cluster_id, libraries",
-        )
-        async def uninstall_library_tool(params: Dict[str, Any]) -> List[TextContent]:
-            logger.info(f"Uninstalling library with params: {params}")
-            try:
-                actual_params = _unwrap_params(params)
-                result = await libraries.uninstall_library(actual_params.get("cluster_id"), actual_params.get("libraries", []))
-                return [{"text": json.dumps(result)}]
-            except Exception as e:
-                logger.error(f"Error uninstalling library: {str(e)}")
-                return [{"text": json.dumps({"error": str(e)})}]
+        # Unity catalog tools
+        @self.tool(name="list_catalogs", description="List Unity Catalog catalogs")
+        async def list_catalogs(ctx: Context | None = None) -> CallToolResult:
+            return await self._run_tool(
+                "list_catalogs",
+                lambda: unity_catalog.list_catalogs(),
+                lambda data: f"Found {len(data.get('catalogs', []))} catalogs",
+                ctx,
+            )
 
-        @self.tool(
-            name="list_cluster_libraries",
-            description="List library status for a cluster with parameter: cluster_id",
-        )
-        async def list_cluster_libraries_tool(params: Dict[str, Any]) -> List[TextContent]:
-            logger.info(f"Listing cluster libraries with params: {params}")
-            try:
-                actual_params = _unwrap_params(params)
-                result = await libraries.list_cluster_libraries(actual_params.get("cluster_id"))
-                return [{"text": json.dumps(result)}]
-            except Exception as e:
-                logger.error(f"Error listing cluster libraries: {str(e)}")
-                return [{"text": json.dumps({"error": str(e)})}]
+        @self.tool(name="create_catalog", description="Create a Unity Catalog catalog")
+        async def create_catalog(name: str, comment: Optional[str] = None, ctx: Context | None = None) -> CallToolResult:
+            return await self._run_tool(
+                "create_catalog",
+                lambda: unity_catalog.create_catalog(name, comment),
+                lambda _: f"Created catalog {name}",
+                ctx,
+            )
 
-        # Repos tools
-        @self.tool(
-            name="create_repo",
-            description="Create or clone a repo with parameters: url, provider, branch (optional)",
-        )
-        async def create_repo_tool(params: Dict[str, Any]) -> List[TextContent]:
-            logger.info(f"Creating repo with params: {params}")
-            try:
-                actual_params = _unwrap_params(params)
-                result = await repos.create_repo(
-                    actual_params.get("url"),
-                    actual_params.get("provider"),
-                    branch=actual_params.get("branch"),
-                    path=actual_params.get("path"),
-                )
-                return [{"text": json.dumps(result)}]
-            except Exception as e:
-                logger.error(f"Error creating repo: {str(e)}")
-                return [{"text": json.dumps({"error": str(e)})}]
+        @self.tool(name="list_schemas", description="List schemas in a catalog")
+        async def list_schemas(catalog_name: str, ctx: Context | None = None) -> CallToolResult:
+            return await self._run_tool(
+                "list_schemas",
+                lambda: unity_catalog.list_schemas(catalog_name),
+                lambda data: f"Catalog {catalog_name} has {len(data.get('schemas', []))} schemas",
+                ctx,
+            )
 
-        @self.tool(
-            name="update_repo",
-            description="Update repo branch with parameters: repo_id, branch or tag",
-        )
-        async def update_repo_tool(params: Dict[str, Any]) -> List[TextContent]:
-            logger.info(f"Updating repo with params: {params}")
-            try:
-                actual_params = _unwrap_params(params)
-                result = await repos.update_repo(
-                    actual_params.get("repo_id"),
-                    branch=actual_params.get("branch"),
-                    tag=actual_params.get("tag"),
-                )
-                return [{"text": json.dumps(result)}]
-            except Exception as e:
-                logger.error(f"Error updating repo: {str(e)}")
-                return [{"text": json.dumps({"error": str(e)})}]
+        @self.tool(name="create_schema", description="Create a schema in Unity Catalog")
+        async def create_schema(catalog_name: str, name: str, comment: Optional[str] = None, ctx: Context | None = None) -> CallToolResult:
+            return await self._run_tool(
+                "create_schema",
+                lambda: unity_catalog.create_schema(catalog_name, name, comment),
+                lambda _: f"Created schema {catalog_name}.{name}",
+                ctx,
+            )
 
-        @self.tool(
-            name="list_repos",
-            description="List repos with optional path_prefix",
-        )
-        async def list_repos_tool(params: Dict[str, Any]) -> List[TextContent]:
-            logger.info(f"Listing repos with params: {params}")
-            try:
-                actual_params = _unwrap_params(params)
-                result = await repos.list_repos(actual_params.get("path_prefix"))
-                return [{"text": json.dumps(result)}]
-            except Exception as e:
-                logger.error(f"Error listing repos: {str(e)}")
-                return [{"text": json.dumps({"error": str(e)})}]
-        
-        # Workspace file tools
-        @self.tool(
-            name="get_workspace_file_content",
-            description="Retrieve the content of a file from Databricks workspace with parameters: workspace_path (required), format (optional: SOURCE, HTML, JUPYTER, DBC - default SOURCE)",
-        )
-        async def get_workspace_file_content(params: Dict[str, Any]) -> List[TextContent]:
-            logger.info(f"Getting workspace file content with params: {params}")
-            try:
-                actual_params = _unwrap_params(params)
-                    
-                workspace_path = actual_params.get("workspace_path")
-                format_type = actual_params.get("format", "SOURCE")
-                
-                if not workspace_path:
-                    raise ValueError("workspace_path is required")
-                
-                # Use the workspace export API
-                result = await notebooks.export_workspace_file(workspace_path, format_type)
-                return [{"text": json.dumps(result)}]
-                
-            except Exception as e:
-                logger.error(f"Error getting workspace file content: {str(e)}")
-                return [{"text": json.dumps({"error": str(e)})}]
-        
-        @self.tool(
-            name="get_workspace_file_info",
-            description="Get metadata about a workspace file with parameters: workspace_path (required)",
-        )
-        async def get_workspace_file_info(params: Dict[str, Any]) -> List[TextContent]:
-            logger.info(f"Getting workspace file info with params: {params}")
-            try:
-                actual_params = _unwrap_params(params)
+        @self.tool(name="list_tables", description="List tables for a schema")
+        async def list_tables(catalog_name: str, schema_name: str, ctx: Context | None = None) -> CallToolResult:
+            return await self._run_tool(
+                "list_tables",
+                lambda: unity_catalog.list_tables(catalog_name, schema_name),
+                lambda data: f"Schema {catalog_name}.{schema_name} has {len(data.get('tables', []))} tables",
+                ctx,
+            )
 
-                workspace_path = actual_params.get("workspace_path")
+        @self.tool(name="create_table", description="Create a table via SQL")
+        async def create_table(warehouse_id: str, statement: str, ctx: Context | None = None) -> CallToolResult:
+            return await self._run_tool(
+                "create_table",
+                lambda: unity_catalog.create_table(warehouse_id, statement),
+                lambda data: f"Table creation run {data.get('run_id', 'submitted')} for warehouse {warehouse_id}",
+                ctx,
+            )
 
-                if not workspace_path:
-                    raise ValueError("workspace_path is required")
+        @self.tool(name="get_table_lineage", description="Get Unity Catalog table lineage")
+        async def get_table_lineage(full_name: str, ctx: Context | None = None) -> CallToolResult:
+            return await self._run_tool(
+                "get_table_lineage",
+                lambda: unity_catalog.get_table_lineage(full_name),
+                lambda data: f"Lineage contains {len(data.get('upstream_tables', []))} upstream tables",
+                ctx,
+            )
 
-                result = await notebooks.get_workspace_file_info(workspace_path)
-                return [{"text": json.dumps(result)}]
+    def get_metrics_snapshot(self) -> Dict[str, int]:
+        """Return a copy of collected tool metrics."""
+        return dict(self._metrics)
 
-            except Exception as e:
-                logger.error(f"Error getting workspace file info: {str(e)}")
-                return [{"text": json.dumps({"error": str(e)})}]
+    # ------------------------------------------------------------------
+    # Entrypoint
+    # ------------------------------------------------------------------
 
-        # Unity Catalog tools
-        @self.tool(name="list_catalogs", description="List catalogs in Unity Catalog")
-        async def list_catalogs_tool(params: Dict[str, Any]) -> List[TextContent]:
-            try:
-                result = await unity_catalog.list_catalogs()
-                return [{"text": json.dumps(result)}]
-            except Exception as e:
-                logger.error(f"Error listing catalogs: {str(e)}")
-                return [{"text": json.dumps({"error": str(e)})}]
-
-        @self.tool(name="create_catalog", description="Create a catalog with parameters: name, comment")
-        async def create_catalog_tool(params: Dict[str, Any]) -> List[TextContent]:
-            try:
-                actual_params = _unwrap_params(params)
-                result = await unity_catalog.create_catalog(actual_params.get("name"), actual_params.get("comment"))
-                return [{"text": json.dumps(result)}]
-            except Exception as e:
-                logger.error(f"Error creating catalog: {str(e)}")
-                return [{"text": json.dumps({"error": str(e)})}]
-
-        @self.tool(name="list_schemas", description="List schemas for a catalog with parameter: catalog_name")
-        async def list_schemas_tool(params: Dict[str, Any]) -> List[TextContent]:
-            try:
-                actual_params = _unwrap_params(params)
-                result = await unity_catalog.list_schemas(actual_params.get("catalog_name"))
-                return [{"text": json.dumps(result)}]
-            except Exception as e:
-                logger.error(f"Error listing schemas: {str(e)}")
-                return [{"text": json.dumps({"error": str(e)})}]
-
-        @self.tool(name="create_schema", description="Create schema with parameters: catalog_name, name, comment")
-        async def create_schema_tool(params: Dict[str, Any]) -> List[TextContent]:
-            try:
-                actual_params = _unwrap_params(params)
-                result = await unity_catalog.create_schema(
-                    actual_params.get("catalog_name"), actual_params.get("name"), actual_params.get("comment")
-                )
-                return [{"text": json.dumps(result)}]
-            except Exception as e:
-                logger.error(f"Error creating schema: {str(e)}")
-                return [{"text": json.dumps({"error": str(e)})}]
-
-        @self.tool(name="list_tables", description="List tables with parameters: catalog_name, schema_name")
-        async def list_tables_tool(params: Dict[str, Any]) -> List[TextContent]:
-            try:
-                actual_params = _unwrap_params(params)
-                result = await unity_catalog.list_tables(
-                    actual_params.get("catalog_name"), actual_params.get("schema_name")
-                )
-                return [{"text": json.dumps(result)}]
-            except Exception as e:
-                logger.error(f"Error listing tables: {str(e)}")
-                return [{"text": json.dumps({"error": str(e)})}]
-
-        @self.tool(name="create_table", description="Create table via SQL with parameters: warehouse_id, statement")
-        async def create_table_tool(params: Dict[str, Any]) -> List[TextContent]:
-            try:
-                actual_params = _unwrap_params(params)
-                result = await unity_catalog.create_table(actual_params.get("warehouse_id"), actual_params.get("statement"))
-                return [{"text": json.dumps(result)}]
-            except Exception as e:
-                logger.error(f"Error creating table: {str(e)}")
-                return [{"text": json.dumps({"error": str(e)})}]
-
-        @self.tool(name="get_table_lineage", description="Get table lineage with parameter: full_name")
-        async def get_table_lineage_tool(params: Dict[str, Any]) -> List[TextContent]:
-            try:
-                actual_params = _unwrap_params(params)
-                result = await unity_catalog.get_table_lineage(actual_params.get("full_name"))
-                return [{"text": json.dumps(result)}]
-            except Exception as e:
-                logger.error(f"Error getting lineage: {str(e)}")
-                return [{"text": json.dumps({"error": str(e)})}]
-
-
-def main():
+def main() -> None:
     """Main entry point for the MCP server."""
+    configure_logging(level=settings.LOG_LEVEL, log_file="databricks_mcp.log")
     try:
         logger.info("Starting Databricks MCP server")
-        
-        # Turn off buffering in stdout
-        if hasattr(sys.stdout, 'reconfigure'):
+        if hasattr(sys.stdout, "reconfigure"):
             sys.stdout.reconfigure(line_buffering=True)
-        
         server = DatabricksMCPServer()
-        
-        # Use the FastMCP run method which handles async internally
         server.run()
-            
-    except Exception as e:
-        logger.error(f"Error in Databricks MCP server: {str(e)}", exc_info=True)
+    except Exception:  # pylint: disable=broad-except
+        logger.exception("Fatal error in Databricks MCP server")
         raise
 
 
 if __name__ == "__main__":
-    main() 
+    main()

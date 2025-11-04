@@ -6,17 +6,13 @@ This module provides command-line functionality for interacting with the Databri
 
 import argparse
 import asyncio
+import json
 import logging
-import sys
 from typing import List, Optional
 
+from databricks_mcp.core.logging_utils import configure_logging
 from databricks_mcp.server.databricks_mcp_server import DatabricksMCPServer, main as server_main
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-)
 logger = logging.getLogger(__name__)
 
 
@@ -77,12 +73,24 @@ async def sync_run(repo_id: int, notebook_path: str, cluster_id: Optional[str]) 
     if cluster_id:
         params["existing_cluster_id"] = cluster_id
     result = await server.call_tool("sync_repo_and_run_notebook", params)
-    if result and hasattr(result[0], "text"):
-        print(result[0].text)
+    if result.isError:
+        print(f"\nError: {result.content[0].text if result.content else 'Unknown failure'}")
+        if result.meta and result.meta.get("data"):
+            print(json.dumps(result.meta["data"], indent=2))
+        return
+
+    if result.content:
+        summary = next((block.text for block in result.content if hasattr(block, "text")), None)
+        if summary:
+            print(f"\n{summary}")
+
+    if result.meta and result.meta.get("data"):
+        print(json.dumps(result.meta["data"], indent=2))
 
 
 def main(args: Optional[List[str]] = None) -> int:
     """Main entry point for the CLI."""
+    configure_logging()
     parsed_args = parse_args(args)
     
     # Set log level
@@ -92,7 +100,7 @@ def main(args: Optional[List[str]] = None) -> int:
     # Execute the appropriate command
     if parsed_args.command == "start":
         logger.info("Starting Databricks MCP server")
-        asyncio.run(server_main())
+        server_main()
     elif parsed_args.command == "list-tools":
         asyncio.run(list_tools())
     elif parsed_args.command == "version":

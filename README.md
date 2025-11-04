@@ -102,27 +102,29 @@ The Databricks MCP Server exposes the following tools:
 - **sync_repo_and_run_notebook**: Pull a repo and execute a notebook in one call
 
 ### SQL Execution
-- **execute_sql**: Execute a SQL statement (warehouse_id optional if DATABRICKS_WAREHOUSE_ID env var is set)
+- **execute_sql**: Execute a SQL statement (optional `warehouse_id`, `catalog`, `schema_name`)
 
-## 🎉 Recent Updates (v0.3.0)
+## 🎉 Recent Updates
 
-**New Features - Repo Sync & Notebook Execution:**
-- ✅ **Repository Management**: Pull latest commits from Databricks repos with `pull_repo` tool
-- ✅ **One-time Notebook Execution**: Submit and wait for notebook runs with `run_notebook` tool  
-- ✅ **Composite Operations**: Combined repo sync + notebook execution with `sync_repo_and_run_notebook` tool
-- ✅ **Enhanced Job Management**: Extended job APIs with submit, status checking, and run management
-- ✅ **Comprehensive Testing**: Full test coverage for all new functionality
+**Structured Output Refresh (current)**
+- ✅ **Typed MCP Schemas**: Tools expose precise input schemas using FastMCP's metadata (no `{ "params": ... }` envelope).
+- ✅ **Structured Results**: Each tool now returns `CallToolResult` with a concise text summary and the full Databricks payload in `_meta['data']`.
+- ✅ **Resource URIs for Large Payloads**: Notebook/workspace exports stash `resource://databricks/exports/{id}` entries in `_meta['resources']` instead of embedding large blobs.
+- ✅ **Resilience Improvements**: Per-tool concurrency limits, timeouts, and retry-with-backoff for transient Databricks errors.
+- ✅ **Progress & Telemetry**: Tools publish MCP progress notifications and surface `_meta._request_id` plus per-tool success/error counters for easier observability.
+- ✅ **Correlation IDs**: All API requests and tool responses carry `_meta._request_id` for traceability.
 
-**Bug Fixes:**
-- ✅ **Issue #9 Fixed**: Resolved "Missing required parameter 'params'" error in Cursor and other MCP clients
-- ✅ **Parameter Handling**: All MCP tools now correctly handle both nested and flat parameter structures
-- ✅ **Cursor Compatibility**: Full compatibility with Cursor's MCP implementation
+**v0.3.0 Highlights**
+- ✅ **Repository Management**: Pull latest commits from Databricks repos with `pull_repo`.
+- ✅ **One-time Notebook Execution**: Submit and wait for notebook runs with `run_notebook`.
+- ✅ **Composite Operations**: Combined repo sync + notebook execution with `sync_repo_and_run_notebook`.
+- ✅ **Enhanced Job Management**: Extended job APIs with submit, status checking, and run management.
 
 **Previous Updates:**
 - **v0.2.1**: Enhanced Codespaces support, documentation improvements, publishing process streamlining
 - **v0.2.0**: Major package refactoring from `src/` to `databricks_mcp/` structure
 
-**Backwards Compatibility:** All existing MCP tools continue to work unchanged. New features extend functionality without breaking changes.
+**Backwards Compatibility:** Breaking change alert — tools now require flat arguments and emit structured responses; update custom clients accordingly.
 
 ## Installation
 
@@ -165,22 +167,7 @@ This will automatically install the MCP server using `uvx` and configure it in C
    cd databricks-mcp
    ```
 
-3. Run the setup script:
-   ```bash
-   # Linux/Mac
-   ./scripts/setup.sh
-   
-   # Windows (PowerShell)
-   .\scripts\setup.ps1
-   ```
-
-   The setup script will:
-   - Install `uv` if not already installed
-   - Create a virtual environment
-   - Install all project dependencies
-   - Verify the installation works
-
-   **Alternative manual setup:**
+3. Create a virtual environment (optional) and install dependencies for local development:
    ```bash
    # Create and activate virtual environment
    uv venv
@@ -222,14 +209,14 @@ This will automatically install the MCP server using `uvx` and configure it in C
 To start the MCP server directly for testing or development, run:
 
 ```bash
-# Activate your virtual environment if not already active
-source .venv/bin/activate 
-
-# Run the start script (handles finding env vars from .env if needed)
-./scripts/start_mcp_server.sh
+uvx databricks-mcp-server@latest
 ```
 
-This is useful for seeing direct output and logs.
+Pass `--log-level DEBUG` or other options using standard CLI flags:
+
+```bash
+uvx databricks-mcp-server@latest -- --log-level DEBUG
+```
 
 ### Integrating with AI Clients
 
@@ -238,15 +225,15 @@ To use this server with AI clients like Cursor or Claude CLI, you need to regist
 #### Cursor Setup
 
 1.  Open your global MCP configuration file located at `~/.cursor/mcp.json` (create it if it doesn't exist).
-2.  Add the following entry within the `mcpServers` object, replacing placeholders with your actual values and ensuring the path to `start_mcp_server.sh` is correct:
+2.  Add the following entry within the `mcpServers` object, replacing placeholders with your actual values:
 
     ```json
     {
       "mcpServers": {
         // ... other servers ...
         "databricks-mcp-local": { 
-          "command": "/absolute/path/to/your/project/databricks-mcp-server/start_mcp_server.sh",
-          "args": [],
+          "command": "uvx",
+          "args": ["databricks-mcp-server@latest"],
           "env": {
             "DATABRICKS_HOST": "https://your-databricks-instance.azuredatabricks.net", 
             "DATABRICKS_TOKEN": "dapiXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
@@ -259,15 +246,12 @@ To use this server with AI clients like Cursor or Claude CLI, you need to regist
     }
     ```
 
-3.  **Important:** Replace `/absolute/path/to/your/project/databricks-mcp-server/` with the actual absolute path to this project directory on your machine.
-4.  Replace the `DATABRICKS_HOST` and `DATABRICKS_TOKEN` values with your credentials.
-5.  Save the file and **restart Cursor**.
-
-6.  You can now invoke tools using `databricks-mcp-local:<tool_name>` (e.g., `databricks-mcp-local:list_jobs`).
+3.  Replace the `DATABRICKS_HOST` and `DATABRICKS_TOKEN` values with your credentials, then **restart Cursor**.
+4.  You can now invoke tools using `databricks-mcp-local:<tool_name>` (e.g., `databricks-mcp-local:list_jobs`).
 
 #### Claude CLI Setup
 
-1.  Use the `claude mcp add` command to register the server. Provide your credentials using the `-e` flag for environment variables and point the command to the `start_mcp_server.sh` script using `--` followed by the absolute path:
+1.  Use the `claude mcp add` command to register the server. Provide your credentials using the `-e` flag for environment variables and point the command to `uvx databricks-mcp-server@latest`:
 
     ```bash
     claude mcp add databricks-mcp-local \
@@ -275,25 +259,11 @@ To use this server with AI clients like Cursor or Claude CLI, you need to regist
       -e DATABRICKS_HOST="https://your-databricks-instance.azuredatabricks.net" \
       -e DATABRICKS_TOKEN="dapiXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX" \
       -e DATABRICKS_WAREHOUSE_ID="sql_warehouse_12345" \
-      -- /absolute/path/to/your/project/databricks-mcp-server/start_mcp_server.sh
+      -- uvx databricks-mcp-server@latest
     ```
 
-2.  **Important:** Replace `/absolute/path/to/your/project/databricks-mcp-server/` with the actual absolute path to this project directory on your machine.
-3.  Replace the `DATABRICKS_HOST` and `DATABRICKS_TOKEN` values with your credentials.
-
-4.  You can now invoke tools using `databricks-mcp-local:<tool_name>` in your Claude interactions.
-
-## Querying Databricks Resources
-
-The repository includes utility scripts to quickly view Databricks resources:
-
-```bash
-# View all clusters
-uv run scripts/show_clusters.py
-
-# View all notebooks
-uv run scripts/show_notebooks.py
-```
+2.  Replace the `DATABRICKS_HOST` and `DATABRICKS_TOKEN` values with your credentials.
+3.  You can now invoke tools using `databricks-mcp-local:<tool_name>` in your Claude interactions.
 
 ## Usage Examples
 
@@ -315,18 +285,18 @@ await session.call_tool("execute_sql", {
 ```python
 # Get JSON file content from workspace
 await session.call_tool("get_workspace_file_content", {
-    "workspace_path": "/Users/user@domain.com/config/settings.json"
+    "path": "/Users/user@domain.com/config/settings.json"
 })
 
 # Get notebook content in Jupyter format
 await session.call_tool("get_workspace_file_content", {
-    "workspace_path": "/Users/user@domain.com/my_notebook",
+    "path": "/Users/user@domain.com/my_notebook",
     "format": "JUPYTER"
 })
 
 # Get file metadata without downloading content
 await session.call_tool("get_workspace_file_info", {
-    "workspace_path": "/Users/user@domain.com/large_file.py"
+    "path": "/Users/user@domain.com/large_file.py"
 })
 ```
 
@@ -357,10 +327,12 @@ await session.call_tool("create_job", job_conf)
 
 ```
 databricks-mcp/
-├── databricks_mcp/                  # Main package (renamed from src/)
+├── AGENTS.md                        # Contributor guidelines (agents/LLM focus)
+├── ARCHITECTURE.md                  # Deep architecture walkthrough
+├── databricks_mcp/                  # Main package
 │   ├── __init__.py                  # Package initialization
-│   ├── __main__.py                  # Main entry point for the package
-│   ├── main.py                      # Entry point for the MCP server
+│   ├── __main__.py                  # Run via `python -m databricks_mcp`
+│   ├── main.py                      # CLI/stdio launcher
 │   ├── api/                         # Databricks API clients
 │   │   ├── clusters.py              # Cluster management
 │   │   ├── jobs.py                  # Job management
@@ -368,48 +340,39 @@ databricks-mcp/
 │   │   ├── sql.py                   # SQL execution
 │   │   └── dbfs.py                  # DBFS operations
 │   ├── core/                        # Core functionality
-│   │   ├── config.py                # Configuration management
-│   │   ├── auth.py                  # Authentication
-│   │   └── utils.py                 # Utilities
-│   ├── server/                      # Server implementation
+│   │   ├── auth.py                  # Authentication helpers
+│   │   ├── config.py                # Settings and env loading
+│   │   ├── logging_utils.py         # Centralized logging
+│   │   └── utils.py                 # HTTP utilities & error helpers
+│   ├── server/                      # MCP server implementation
 │   │   ├── __main__.py              # Server entry point
-│   │   ├── databricks_mcp_server.py # Main MCP server
-│   │   └── app.py                   # FastAPI app for tests
+│   │   ├── databricks_mcp_server.py # Main MCP server class
+│   │   └── tool_helpers.py          # Shared response builders
 │   └── cli/                         # Command-line interface
 │       └── commands.py              # CLI commands
 ├── tests/                           # Test directory
 │   ├── test_clusters.py             # Cluster tests
 │   ├── test_mcp_server.py           # Server tests
 │   └── test_*.py                    # Other test files
-├── scripts/                         # Helper scripts (organized)
-│   ├── start_mcp_server.ps1         # Server startup script (Windows)
-│   ├── start_mcp_server.sh          # Server startup script (Unix)
-│   ├── run_tests.ps1                # Test runner script (Windows)
-│   ├── run_tests.sh                 # Test runner script (Unix)
-│   ├── setup.ps1                    # Setup script (Windows)
-│   ├── setup.sh                     # Setup script (Unix)
-│   ├── show_clusters.py             # Script to show clusters
-│   ├── show_notebooks.py            # Script to show notebooks
-│   ├── setup_codespaces.sh          # Codespaces setup
-│   └── test_setup_local.sh          # Local test setup
-├── examples/                        # Example usage
-│   ├── direct_usage.py              # Direct usage examples
-│   └── mcp_client_usage.py          # MCP client examples
-├── docs/                            # Documentation (organized)
-│   ├── AGENTS.md                    # Agent documentation
-│   ├── project_structure.md         # Detailed structure docs
-│   ├── new_features.md              # Feature documentation
-│   └── phase1.md                    # Development phases
-├── .gitignore                       # Git ignore rules
-├── .cursor.json                     # Cursor configuration
-├── pyproject.toml                   # Package configuration
+├── README.md                        # Project overview (this file)
+├── TODO.md                          # Active refactor checklist
+├── pyproject.toml                   # Package metadata
 ├── uv.lock                          # Dependency lock file
-└── README.md                        # This file
+└── .gitignore                       # Git ignore rules
 ```
 
-See `docs/project_structure.md` for a more detailed view of the project structure.
-
 ## Development
+
+## Documentation
+
+- [ARCHITECTURE.md](ARCHITECTURE.md) — End-to-end component overview, resource flow, and integration details.
+- [AGENTS.md](AGENTS.md) — Contributor guidelines and MCP agent conventions.
+
+## Cross-Platform Notes
+
+- `uvx databricks-mcp-server@latest` works on macOS, Linux, and Windows (PowerShell) without per-platform scripts.
+- Tests run portably with `uv run pytest`; no shell-specific harnesses remain.
+- Progress notifications and structured outputs follow the MCP spec, so clients on any OS receive the same responses.
 
 ### Code Standards
 
