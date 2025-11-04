@@ -69,7 +69,7 @@ This document provides a comprehensive, highly detailed, end‑to‑end overview
 
 Module entrypoints for `python -m` execution:
 - `databricks_mcp/__main__.py` delegates to `databricks_mcp.main:main`.
-- `databricks_mcp/server/__main__.py` attempts to run `server.databricks_mcp_server:main` under `asyncio` (see Caveats).
+- `databricks_mcp/server/__main__.py` invokes `server.databricks_mcp_server:main()` directly.
 
 
 ## 3) Configuration & Environment

@@ -39,10 +39,11 @@ Credit for the initial version goes to [@JustTryAI](https://github.com/JustTryAI
 
 ## Features
 
-- **MCP Protocol Support**: Implements the MCP protocol to allow LLMs to interact with Databricks
-- **Databricks API Integration**: Provides access to Databricks REST API functionality
-- **Tool Registration**: Exposes Databricks functionality as MCP tools
-- **Async Support**: Built with asyncio for efficient operation
+- **Structured MCP Responses**: Tools return `CallToolResult` objects with summaries in `content` and full payloads in `_meta['data']`.
+- **Resource Caching**: Large exports (workspace files, notebooks) are stored once and exposed as `resource://databricks/exports/{id}` URIs under `_meta['resources']`.
+- **Progress & Metrics**: Long-running tools stream MCP progress notifications and track per-tool success/error counters.
+- **Resilient Networking**: Shared HTTP client adds request IDs, timeout controls, and exponential backoff for retryable Databricks errors.
+- **Async MCP Runtime**: Built atop `mcp.server.FastMCP` for stdio transport with centralized JSON logging.
 
 ## Available Tools
 
@@ -212,6 +213,8 @@ To start the MCP server directly for testing or development, run:
 uvx databricks-mcp-server@latest
 ```
 
+> Tip: add `--refresh` (for example `uvx databricks-mcp-server@latest --refresh`) to force-install the newest release after publishing.
+
 Pass `--log-level DEBUG` or other options using standard CLI flags:
 
 ```bash
@@ -269,12 +272,15 @@ To use this server with AI clients like Cursor or Claude CLI, you need to regist
 
 ### SQL Execution with Default Warehouse
 ```python
-# With DATABRICKS_WAREHOUSE_ID set, warehouse_id is optional
-await session.call_tool("execute_sql", {
+result = await session.call_tool("execute_sql", {
     "statement": "SELECT * FROM my_table LIMIT 10"
 })
 
-# You can still override the default warehouse
+print(result.content[0].text)  # Human summary from the server
+rows = (result.meta or {}).get("data", {}).get("result", [])
+print(rows)
+
+# Override the default warehouse if needed
 await session.call_tool("execute_sql", {
     "statement": "SELECT * FROM my_table LIMIT 10",
     "warehouse_id": "sql_warehouse_specific"
@@ -283,10 +289,14 @@ await session.call_tool("execute_sql", {
 
 ### Workspace File Content Retrieval
 ```python
-# Get JSON file content from workspace
-await session.call_tool("get_workspace_file_content", {
+# Get JSON file content from workspace (resource cached server-side)
+result = await session.call_tool("get_workspace_file_content", {
     "path": "/Users/user@domain.com/config/settings.json"
 })
+
+resource_uri = (result.meta or {}).get("resources", [{}])[0].get("uri")
+if resource_uri:
+    contents = await session.read_resource(resource_uri)
 
 # Get notebook content in Jupyter format
 await session.call_tool("get_workspace_file_content", {
@@ -327,128 +337,47 @@ await session.call_tool("create_job", job_conf)
 
 ```
 databricks-mcp/
-├── AGENTS.md                        # Contributor guidelines (agents/LLM focus)
+├── AGENTS.md                        # Contributor guide (MCP agent focus)
 ├── ARCHITECTURE.md                  # Deep architecture walkthrough
-├── databricks_mcp/                  # Main package
-│   ├── __init__.py                  # Package initialization
-│   ├── __main__.py                  # Run via `python -m databricks_mcp`
-│   ├── main.py                      # CLI/stdio launcher
-│   ├── api/                         # Databricks API clients
-│   │   ├── clusters.py              # Cluster management
-│   │   ├── jobs.py                  # Job management
-│   │   ├── notebooks.py             # Notebook operations
-│   │   ├── sql.py                   # SQL execution
-│   │   └── dbfs.py                  # DBFS operations
-│   ├── core/                        # Core functionality
-│   │   ├── auth.py                  # Authentication helpers
-│   │   ├── config.py                # Settings and env loading
-│   │   ├── logging_utils.py         # Centralized logging
-│   │   └── utils.py                 # HTTP utilities & error helpers
-│   ├── server/                      # MCP server implementation
-│   │   ├── __main__.py              # Server entry point
-│   │   ├── databricks_mcp_server.py # Main MCP server class
-│   │   └── tool_helpers.py          # Shared response builders
-│   └── cli/                         # Command-line interface
-│       └── commands.py              # CLI commands
-├── tests/                           # Test directory
-│   ├── test_clusters.py             # Cluster tests
-│   ├── test_mcp_server.py           # Server tests
-│   └── test_*.py                    # Other test files
 ├── README.md                        # Project overview (this file)
 ├── TODO.md                          # Active refactor checklist
-├── pyproject.toml                   # Package metadata
-├── uv.lock                          # Dependency lock file
-└── .gitignore                       # Git ignore rules
+├── databricks_mcp/                  # Main package
+│   ├── api/                         # Databricks REST wrappers
+│   ├── cli/commands.py              # CLI entry points
+│   ├── core/                        # Settings, logging, models, utils
+│   └── server/                      # FastMCP server implementation
+├── docs/                            # Historical docs (kept for reference)
+├── tests/                           # Pytest suites (mocked, no shell scripts)
+├── pyproject.toml                   # Package metadata (v0.4.0)
+├── uv.lock                          # Locked dependency versions
+└── .env.example                     # Environment variable template
 ```
 
 ## Development
 
+- Format with Black: `uv run black databricks_mcp tests`
+- Lint with Pylint: `uv run pylint databricks_mcp tests`
+- Run tests locally: `uv run pytest`
+- Build distributables: `uv build`
+- Publish (requires `PYPI_TOKEN`): `uv publish --token "$PYPI_TOKEN"`
+
 ## Documentation
 
-- [ARCHITECTURE.md](ARCHITECTURE.md) — End-to-end component overview, resource flow, and integration details.
-- [AGENTS.md](AGENTS.md) — Contributor guidelines and MCP agent conventions.
+- [ARCHITECTURE.md](ARCHITECTURE.md)
+- [AGENTS.md](AGENTS.md)
+- [TODO.md](TODO.md)
 
 ## Cross-Platform Notes
 
-- `uvx databricks-mcp-server@latest` works on macOS, Linux, and Windows (PowerShell) without per-platform scripts.
-- Tests run portably with `uv run pytest`; no shell-specific harnesses remain.
-- Progress notifications and structured outputs follow the MCP spec, so clients on any OS receive the same responses.
-
-### Code Standards
-
-- Python code follows PEP 8 style guide with a maximum line length of 100 characters
-- Use 4 spaces for indentation (no tabs)
-- Use double quotes for strings
-- All classes, methods, and functions should have Google-style docstrings
-- Type hints are required for all code except tests
-
-### Linting
-
-The project uses the following linting tools:
-
-```bash
-# Run all linters
-uv run pylint databricks_mcp/ tests/
-uv run flake8 databricks_mcp/ tests/
-uv run mypy databricks_mcp/
-```
+- `uvx databricks-mcp-server@latest` works on macOS, Linux, and Windows.
+- All examples assume environment variables are set or provided by the host (Cursor, Claude, etc.).
 
 ## Testing
 
-The project uses pytest for testing. To run the tests:
-
 ```bash
-# Run all tests with our convenient script
-.\scripts\run_tests.ps1
-
-# Run with coverage report
-.\scripts\run_tests.ps1 -Coverage
-
-# Run specific tests with verbose output
-.\scripts\run_tests.ps1 -Verbose -Coverage tests/test_clusters.py
+uv run pytest
 ```
-
-You can also run the tests directly with pytest:
-
-```bash
-# Run all tests
-uv run pytest tests/
-
-# Run with coverage report
-uv run pytest --cov=databricks_mcp tests/ --cov-report=term-missing
-```
-
-A minimum code coverage of 80% is the goal for the project.
-
-## Documentation
-
-- API documentation is generated using Sphinx and can be found in the `docs/api` directory
-- All code includes Google-style docstrings
-- See the `examples/` directory for usage examples
-
-## Examples
-
-Check the `examples/` directory for usage examples. To run examples:
-
-```bash
-# Run example scripts with uv
-uv run examples/direct_usage.py
-uv run examples/mcp_client_usage.py
-```
-
-## Contributing
-
-Contributions are welcome! Please feel free to submit a Pull Request.
-
-1. Ensure your code follows the project's coding standards
-2. Add tests for any new functionality
-3. Update documentation as necessary
-4. Verify all tests pass before submitting
 
 ## License
 
-This project is licensed under the MIT License - see the LICENSE file for details.
-
-## About
-
- A Model Completion Protocol (MCP) server for interacting with Databricks services. Maintained by markov.bot. 
+Released under the MIT License. See [LICENSE](LICENSE).
