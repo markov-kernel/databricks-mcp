@@ -1,68 +1,44 @@
 # Tests for Databricks MCP Server
 
-This directory contains test scripts for the Databricks MCP server.
+This directory contains automated tests for the Databricks MCP server. The
+suite is written in `pytest` and relies on `uv` for dependency and virtualenv
+management.
 
-## Test Files
+## Layout
 
-1. **Direct Test (direct_test.py)**
-   
-   This test directly instantiates the Databricks MCP server and calls its tools
-   without going through the MCP protocol. It's useful for testing the core
-   functionality without the overhead of the MCP protocol.
+- `test_additional_features.py` – smoke tests for auxiliary Databricks features
+  (repos, workspace listings, etc.).
+- `test_clusters.py` – CRUD and lifecycle coverage for cluster-oriented tools.
+- `test_tool_metadata.py` – asserts that every registered tool exposes the
+  expected description, schema metadata, and argument signatures.
+- `test_server_structured.py` – validates that tool responses populate
+  `structuredContent`, include human-readable text summaries, and surface
+  resource links for large artifacts.
+- `test_transcript.py` – golden transcript of a `tools/list` and representative
+  `tools/call` interaction to guard against protocol regressions.
 
-2. **MCP Client Test (mcp_client_test.py)**
-   
-   This test uses the MCP client to connect to the Databricks MCP server and test
-   its tools through the MCP protocol. It's useful for testing the server's
-   compatibility with the MCP protocol.
+All tests are async-friendly and do not require live Databricks credentials;
+HTTP calls are mocked.
 
-3. **List Tools Test (list_tools_test.py)**
-   
-   This test connects to the Databricks MCP server using the MCP client and lists
-   all available tools. It's a simple test to verify that the server is running
-   and properly responding to the MCP protocol.
+## Running the Test Suite
 
-## Running Tests
-
-You can run the tests using the provided shell scripts in the project root:
-
-### Windows (PowerShell)
-
-```powershell
-.\run_direct_test.ps1     # Run the direct test
-.\run_list_tools.ps1      # Run the list tools test
-.\run_mcp_client_test.ps1 # Run the MCP client test
-```
-
-### Linux/Mac
+From the repository root:
 
 ```bash
-./run_direct_test.sh     # Run the direct test
-./run_list_tools.sh      # Run the list tools test
-./run_mcp_client_test.sh # Run the MCP client test
+uv run pytest
 ```
 
-## Running Tests Manually
-
-If you want to run the tests manually:
-
-```bash
-# Activate the environment
-source .venv/bin/activate  # Linux/Mac
-# or
-.\.venv\Scripts\activate   # Windows
-
-# Run the tests
-uv run -m tests.direct_test
-uv run -m tests.list_tools_test
-uv run -m tests.mcp_client_test
-```
+The command above automatically creates an ephemeral virtual environment (if
+needed), installs the `dev` extras, and executes every test module in this
+directory. The suite completes in under a second on a typical laptop.
 
 ## Adding New Tests
 
-When adding new tests, please follow these guidelines:
-
-1. Create a new Python file in the `tests` directory.
-2. Import the necessary modules from the `src` directory.
-3. Create a shell script in the project root to run the test.
-4. Document the test in this README. 
+1. Create a new `test_*.py` file in this directory and use `pytest` naming
+   conventions for functions/classes.
+2. Prefer fixtures from `tests/__init__.py` when mocking Databricks responses or
+   seeding tool contexts.
+3. Keep protocol-level assertions (structured content shape, resource links,
+   progress notifications) close to the server modules they cover.
+4. Run `uv run pytest` locally before opening a pull request and update this
+   README if you add significant new suites or fixtures.
