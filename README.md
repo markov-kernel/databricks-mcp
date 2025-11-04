@@ -1,6 +1,6 @@
 # Databricks MCP Server
 
-A production-ready Model Completion Protocol (MCP) server that exposes Databricks REST capabilities to MCP-compatible agents and tooling. Version **0.4.1** introduces structured responses, resource caching, retry-aware networking, and end-to-end resilience improvements.
+A production-ready **Model Context Protocol (MCP)** server that exposes Databricks REST capabilities to MCP-compatible agents and tooling. Version **0.4.2** introduces structured responses, resource caching, retry-aware networking, and end-to-end resilience improvements.
 
 ---
 
@@ -22,8 +22,8 @@ A production-ready Model Completion Protocol (MCP) server that exposes Databrick
 ---
 
 ## Key Capabilities
-- **Structured MCP Responses** – Each tool returns a `CallToolResult` with human-readable summaries in `content` and machine-readable payloads in `_meta['data']`.
-- **Resource Caching** – Large notebook/workspace exports are cached once and exposed as `resource://databricks/exports/{id}` entries under `_meta['resources']`.
+- **Structured MCP Responses** – Each tool returns a `CallToolResult` with a human-readable summary in `content` and machine-readable payloads in `structuredContent` that conform to the tool’s `outputSchema`.
+- **Resource Caching** – Large notebook/workspace exports are cached once and returned as `resource_link` content blocks with URIs such as `databricks://exports/{id}` (also reflected in metadata for convenience).
 - **Progress & Metrics** – Long-running actions stream MCP progress notifications and track per-tool success/error/timeout/cancel metrics.
 - **Resilient Networking** – Shared HTTP client injects request IDs, enforces timeouts, and retries retryable Databricks responses (408/429/5xx) with exponential backoff.
 - **Async Runtime** – Built on `mcp.server.FastMCP` with centralized JSON logging and concurrency guards for predictable stdio behaviour.
@@ -59,7 +59,7 @@ cd databricks-mcp
 # Create an isolated environment (optional but recommended)
 uv venv
 source .venv/bin/activate  # Linux/Mac
-# .\.venv\Scriptsctivate  # Windows PowerShell
+# .\.venv\Scripts\activate  # Windows PowerShell
 
 # Install package and development dependencies
 uv pip install -e .
@@ -93,6 +93,33 @@ uvx databricks-mcp-server@latest -- --log-level DEBUG
 
 ## Integrating with MCP Clients
 
+### Codex CLI (STDIO)
+Register the server and inject credentials via the CLI:
+
+```bash
+codex mcp add databricks   --env DATABRICKS_HOST="https://your-workspace.databricks.com"   --env DATABRICKS_TOKEN="dapi_XXXXXXXXXXXXXXXX"   --env DATABRICKS_WAREHOUSE_ID="sql_warehouse_12345"   -- uvx databricks-mcp-server@latest
+# Add --refresh immediately after a publish to invalidate the uv cache
+```
+
+Or edit `~/.codex/config.toml`:
+
+```toml
+[mcp_servers.databricks]
+command = "uvx"
+args    = ["databricks-mcp-server@latest"]
+env = {
+  DATABRICKS_HOST = "https://your-workspace.databricks.com",
+  DATABRICKS_TOKEN = "dapi_XXXXXXXXXXXXXXXX",
+  DATABRICKS_WAREHOUSE_ID = "sql_warehouse_12345"
+}
+startup_timeout_sec = 15
+tool_timeout_sec    = 300
+```
+
+> Planning an HTTP deployment? Codex also supports `url = "https://…"` plus
+> `bearer_token_env_var = "DATabricks_TOKEN"` or `codex mcp login` (with
+> `experimental_use_rmcp_client = true`).
+
 ### Cursor
 ```jsonc
 {
@@ -110,7 +137,7 @@ uvx databricks-mcp-server@latest -- --log-level DEBUG
   }
 }
 ```
-Restart Cursor after saving. Invoke tools as `databricks-mcp-local:<tool>`.
+Restart Cursor after saving and invoke tools as `databricks-mcp-local:<tool>`.
 
 ### Claude CLI
 ```bash
@@ -118,20 +145,22 @@ claude mcp add databricks-mcp-local   -s user   -e DATABRICKS_HOST="https://your
 ```
 
 ## Working with Tool Responses
-Structured payloads live in `_meta['data']`; large resources are referenced in `_meta['resources']`.
+`structuredContent` carries machine-readable payloads. Large artifacts are returned as `resource_link` content blocks using URIs like `databricks://exports/{id}` and can be fetched via the MCP resources API.
 
 ```python
 result = await session.call_tool("list_clusters", {})
 summary = next((block.text for block in result.content if getattr(block, "type", "") == "text"), "")
-clusters = (result.meta or {}).get("data", {}).get("clusters", [])
-resources = (result.meta or {}).get("resources", [])
+clusters = (result.structuredContent or {}).get("clusters", [])
+resource_links = [block for block in result.content if isinstance(block, dict) and block.get("type") == "resource_link"]
 ```
+
+Progress notifications follow MCP’s progress token mechanism; Codex surfaces these messages in the UI while a tool runs.
 
 ### Example – SQL Query
 ```python
 result = await session.call_tool("execute_sql", {"statement": "SELECT * FROM samples LIMIT 10"})
 print(result.content[0].text)
-rows = (result.meta or {}).get("data", {}).get("result", [])
+rows = (result.structuredContent or {}).get("result", [])
 ```
 
 ### Example – Workspace File Export
@@ -140,9 +169,9 @@ result = await session.call_tool("get_workspace_file_content", {
     "path": "/Users/user@domain.com/report.ipynb",
     "format": "SOURCE"
 })
-resource_uri = (result.meta or {}).get("resources", [{}])[0].get("uri")
-if resource_uri:
-    contents = await session.read_resource(resource_uri)
+resource_link = next((block for block in result.content if isinstance(block, dict) and block.get("type") == "resource_link"), None)
+if resource_link:
+    contents = await session.read_resource(resource_link["uri"])
 ```
 
 ## Available Tools

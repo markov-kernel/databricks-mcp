@@ -24,7 +24,7 @@ async def test_list_clusters_transcript(monkeypatch):
         "request": {"name": "list_clusters", "arguments": {}},
         "response": {
             "isError": result.isError,
-            "data": (result.meta or {}).get("data"),
+            "structuredContent": result.structuredContent,
         },
     }
 
@@ -32,7 +32,7 @@ async def test_list_clusters_transcript(monkeypatch):
         "request": {"name": "list_clusters", "arguments": {}},
         "response": {
             "isError": False,
-            "data": {"clusters": [{"cluster_id": "transcript", "state": "RUNNING"}]},
+            "structuredContent": {"clusters": [{"cluster_id": "transcript", "state": "RUNNING"}]},
         },
     }
 

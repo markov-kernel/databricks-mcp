@@ -158,31 +158,34 @@ class DatabricksMCPServer(FastMCP):
                     message = f"{name} timed out after {settings.TOOL_TIMEOUT_SECONDS}s"
                     logger.warning("%s", message, extra=extra)
                     self._metrics[f"{name}.timeout"] += 1
-                    return error_result(message, status_code=504)
+                    err = error_result(message, status_code=504)
+                    err.meta = {"tool": name, "_request_id": execution_id}
+                    return err
                 except asyncio.CancelledError:
                     message = f"{name} was cancelled"
                     logger.info(message, extra=extra)
                     self._metrics[f"{name}.cancelled"] += 1
-                    return error_result(message, status_code=499)
+                    err = error_result(message, status_code=499)
+                    err.meta = {"tool": name, "_request_id": execution_id}
+                    return err
                 except DatabricksAPIError as err:
                     message = f"{name} failed: {err.message}"
                     logger.warning(message, extra=extra)
                     self._metrics[f"{name}.error"] += 1
-                    return error_result(message, details=err.response, status_code=err.status_code)
+                    err_result = error_result(message, details=err.response, status_code=err.status_code)
+                    err_result.meta = {"tool": name, "_request_id": execution_id}
+                    return err_result
                 except Exception as err:  # pylint: disable=broad-except
                     logger.exception("Unexpected error running %s", name, extra=extra)
                     self._metrics[f"{name}.error"] += 1
-                    return error_result(f"{name} failed unexpectedly", details=str(err))
+                    err_result = error_result(f"{name} failed unexpectedly", details=str(err))
+                    err_result.meta = {"tool": name, "_request_id": execution_id}
+                    return err_result
         finally:
             request_context_id.reset(token)
 
         summary = summary_fn(result)
-        response = success_result(summary, result)
-        meta = response.meta or {}
-        meta.setdefault("data", {})
-        meta["_request_id"] = execution_id
-        meta["tool"] = name
-        response.meta = meta
+        response = success_result(summary, result, meta={"tool": name, "_request_id": execution_id})
         self._metrics[f"{name}.success"] += 1
         await self._report_progress(ctx, 100, message=f"Completed {name}")
         logger.info("Tool %s succeeded", name, extra={"request_id": execution_id, "tool": name})
@@ -381,7 +384,7 @@ class DatabricksMCPServer(FastMCP):
                 ctx,
             )
 
-            data_block = (result.meta or {}).get("data") or {}
+            data_block = result.structuredContent or {}
             if result.isError or not data_block:
                 return result
 
@@ -403,10 +406,18 @@ class DatabricksMCPServer(FastMCP):
             else:
                 return result
 
-            meta = result.meta or {}
-            resources_meta = meta.setdefault("resources", [])
-            resources_meta.append({"uri": resource_uri, "mimeType": mime, "description": f"Notebook {path} ({format})"})
-            result.meta = meta
+            result.content.append(
+                {
+                    "type": "resource_link",
+                    "uri": resource_uri,
+                    "name": f"Notebook export ({format})",
+                    "description": f"Notebook {path} ({format})",
+                    "mimeType": mime,
+                }
+            )
+            structured = result.structuredContent or {}
+            structured.setdefault("resource_uri", resource_uri)
+            result.structuredContent = structured
             await self._report_progress(ctx, 90, message="Notebook export cached")
             return result
 
@@ -447,7 +458,7 @@ class DatabricksMCPServer(FastMCP):
                 ctx,
             )
 
-            data_block = (result.meta or {}).get("data") or {}
+            data_block = result.structuredContent or {}
             if result.isError or not data_block:
                 return result
 
@@ -463,10 +474,18 @@ class DatabricksMCPServer(FastMCP):
                 resource_uri = None
 
             if resource_uri:
-                meta = result.meta or {}
-                resources_meta = meta.setdefault("resources", [])
-                resources_meta.append({"uri": resource_uri, "mimeType": mime, "description": f"Workspace file {path}"})
-                result.meta = meta
+                result.content.append(
+                    {
+                        "type": "resource_link",
+                        "uri": resource_uri,
+                        "name": "Workspace export",
+                        "description": f"Workspace file {path}",
+                        "mimeType": mime,
+                    }
+                )
+                structured = result.structuredContent or {}
+                structured.setdefault("resource_uri", resource_uri)
+                result.structuredContent = structured
 
             return result
 

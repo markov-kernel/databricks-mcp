@@ -23,7 +23,7 @@ async def test_list_clusters_structured(monkeypatch):
     result = await server.call_tool("list_clusters", {})
 
     assert result.isError is False
-    data = (result.meta or {}).get("data")
+    data = result.structuredContent
     assert data == {"clusters": [{"cluster_id": "test", "state": "RUNNING"}]}
     assert "_request_id" in (result.meta or {})
     assert result.content and "Found 1 clusters" in result.content[0].text
@@ -45,12 +45,10 @@ async def test_export_notebook_returns_resource_link(monkeypatch):
     result = await server.call_tool("export_notebook", {"path": "/Users/demo", "format": "SOURCE"})
 
     assert result.isError is False
-    # The first content block is the summary text; second should be a resource link.
-    meta = result.meta or {}
-    resources = meta.get("resources", [])
-    assert resources and resources[0]["uri"].startswith("resource://databricks/exports/")
-    data = meta.get("data")
+    assert any(block.get("type") == "resource_link" for block in result.content if isinstance(block, dict))
+    data = result.structuredContent
     assert data["content"] == payload["content"]
+    assert data.get("resource_uri", "").startswith("databricks://exports/")
 
 
 @pytest.mark.asyncio
@@ -64,6 +62,6 @@ async def test_error_wrapped(monkeypatch):
     result = await server.call_tool("list_clusters", {})
 
     assert result.isError is True
-    data = (result.meta or {}).get("data")
+    data = result.structuredContent
     assert data["message"].startswith("list_clusters failed")
     assert data["status_code"] == 500

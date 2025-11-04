@@ -2,7 +2,7 @@
 
 This document provides a comprehensive, highly detailed, end‑to‑end overview of the Databricks MCP Server contained in this repository. It covers the project structure, runtime architecture, MCP tools and their parameters, data flow and error handling, configuration, testing, and known caveats.
 
-> Package: `databricks-mcp-server` (v0.4.1 in packaging metadata)
+> Package: `databricks-mcp-server` (v0.4.2 in packaging metadata)
 
 
 ## 1) Repository at a Glance
@@ -98,7 +98,7 @@ API_MAX_RETRIES=3
 API_RETRY_BACKOFF_SECONDS=0.5
 ```
 
-Note: Package and runtime versions are unified via `settings.VERSION` (currently `0.4.1`).
+Note: Package and runtime versions are unified via `settings.VERSION` (currently `0.4.2`).
 
 
 ## 4) Core Utilities and Error Handling
@@ -132,7 +132,7 @@ File: `databricks_mcp/server/databricks_mcp_server.py:1`
 - Legacy `{ "params": { ... } }` envelopes were removed in favour of consistent argument validation.
 
 ### 6.2 Content Shape and Structured Results
-- Tool handlers return `CallToolResult` objects with both a short human summary (`TextContent`) and the full Databricks payload under `_meta['data']`.
+- Tool handlers return `CallToolResult` objects with a short human summary (`TextContent`) and the full Databricks payload in `structuredContent` (validated by each tool's `outputSchema`).
 - Each response annotates `_meta['_request_id']` for correlation and attaches cached resource references for large exports.
 - Tests such as `tests/test_server_structured.py` assert the presence of structured JSON and resource metadata.
 
@@ -159,7 +159,7 @@ File: `databricks_mcp/cli/commands.py`
   - `start` — runs the MCP server (stdio entrypoint).
   - `list-tools` — prints tool name + description via `FastMCP.list_tools()`.
   - `version` — instantiates the server to display `server.version` and warn about missing env vars.
-  - `sync-run` — wraps `sync_repo_and_run_notebook`, printing the summary text block and pretty-printing `_meta['data']` on success/errors.
+  - `sync-run` — wraps `sync_repo_and_run_notebook`, printing the summary text block and pretty-printing `structuredContent` on success/errors.
 
 Examples:
 ```
@@ -308,7 +308,7 @@ All registered in `databricks_mcp/server/databricks_mcp_server.py`:
 1. MCP clients invoke tool `X` with flat JSON arguments generated from FastMCP's auto-synthesised `inputSchema`.
 2. Server validates/coerces arguments via Pydantic-toned metadata and dispatches to the async API module.
 3. API utilities issue REST calls with exponential retry, correlation headers, and bounded concurrency.
-4. Tool handler wraps the API payload in a `CallToolResult`, emitting a concise text summary and attaching the raw JSON to `_meta['data']` (with `_meta['_request_id']`).
+4. Tool handler wraps the API payload in a `CallToolResult`, emitting a concise text summary and attaching the raw JSON to `structuredContent` (with `_meta['_request_id']`).
 5. For large artifacts (notebook exports, workspace files), the handler caches the payload and records `resource://databricks/exports/{id}` entries in `_meta['resources']` instead of embedding multi-megabyte strings.
 
 ### 11.2 SQL Execution
@@ -329,7 +329,7 @@ All registered in `databricks_mcp/server/databricks_mcp_server.py`:
 
 - HTTP layer retries transient failures and raises `DatabricksAPIError` with structured response payloads when available.
 - `_run_tool` wraps calls in `asyncio.wait_for`, tracks success/error/timeout/cancel counters, and injects `_meta['_request_id']` for every response.
-- On failure, `error_result(...)` places details under `_meta['data']`; clients can inspect `isError` and the metadata rather than parsing text blobs.
+- On failure, `error_result(...)` places details in `structuredContent`; clients can inspect `isError` and use `_meta` solely for request metadata.
 - Progress updates are reported through `Context.report_progress`, emitting start/mid/end notifications for long-running actions (repo sync + notebook run, SQL execution, etc.).
 - Logging is centralized via `core.logging_utils.configure_logging`, emitting JSON lines to stderr (and `databricks_mcp.log` when configured) with correlation IDs.
 
@@ -347,7 +347,7 @@ Configuration (`pyproject.toml`) enables async tests with concise output and sho
 
 Representative suites:
 - `tests/test_clusters.py` / `tests/test_additional_features.py` — patch API modules to validate tool orchestration logic.
-- `tests/test_server_structured.py` — exercises structured `CallToolResult` payloads, ensuring `_meta['data']` and cached resource metadata behave correctly.
+- `tests/test_server_structured.py` — exercises structured `CallToolResult` payloads, ensuring `structuredContent` and cached resource URIs behave correctly.
 - `tests/test_tool_metadata.py` — verifies FastMCP emits input/output schemas for registered tools.
 - `tests/test_transcript.py` — captures a deterministic request/response transcript for regression detection.
 

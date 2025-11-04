@@ -4,7 +4,7 @@ Helper utilities for building consistent MCP tool responses.
 
 from __future__ import annotations
 
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Sequence
 
 from mcp.types import CallToolResult, TextContent
 
@@ -18,7 +18,13 @@ def _coerce_structured(data: Any) -> Dict[str, Any]:
     return {"result": data}
 
 
-def success_result(summary: str, data: Any) -> CallToolResult:
+def success_result(
+    summary: str,
+    data: Any,
+    *,
+    meta: Optional[Dict[str, Any]] = None,
+    resource_links: Optional[Sequence[Dict[str, Any]]] = None,
+) -> CallToolResult:
     """
     Build a standardized success payload with structured content.
 
@@ -26,11 +32,23 @@ def success_result(summary: str, data: Any) -> CallToolResult:
         summary: Short human-readable description.
         data: Structured payload (or object convertible to dict via `.model_dump()`).
     """
-    return CallToolResult(
+    result = CallToolResult(
         content=[TextContent(type="text", text=summary)],
-        _meta={"data": _coerce_structured(data)},
+        structuredContent=_coerce_structured(data),
         isError=False,
     )
+    if meta:
+        result.meta = meta
+    if resource_links:
+        # Append resource_link content blocks (per MCP spec)
+        for link in resource_links:
+            result.content.append(
+                {  # type: ignore[dict-item]
+                    "type": "resource_link",
+                    **link,
+                }
+            )
+    return result
 
 
 def error_result(message: str, *, details: Optional[Any] = None, status_code: Optional[int] = None) -> CallToolResult:
@@ -50,6 +68,6 @@ def error_result(message: str, *, details: Optional[Any] = None, status_code: Op
 
     return CallToolResult(
         content=[TextContent(type="text", text=message)],
-        _meta={"data": payload},
+        structuredContent=payload,
         isError=True,
     )
