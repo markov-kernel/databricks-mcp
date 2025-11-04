@@ -1,6 +1,6 @@
 # Databricks MCP Server
 
-A production-ready Model Completion Protocol (MCP) server that exposes Databricks REST capabilities to MCP-compatible agents and tooling. Version **0.4.0** introduces structured responses, resource caching, retry-aware networking, and end-to-end resilience improvements.
+A production-ready Model Completion Protocol (MCP) server that exposes Databricks REST capabilities to MCP-compatible agents and tooling. Version **0.4.1** introduces structured responses, resource caching, retry-aware networking, and end-to-end resilience improvements.
 
 ---
 
